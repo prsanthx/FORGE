@@ -1,0 +1,37 @@
+name: planning
+description: >
+  Baseline plus hierarchical planning. Natural language becomes dependency-aware
+  tasks with expected outputs and failure conditions. No verification or recovery.
+features:
+  planning: true
+  hierarchical_planning: true
+  verification: false
+  recovery: false
+  kg_retrieval: false
+  git_checkpoints: false
+  failure_memory: false
+  context_packs: false
+  graph_rag: false
+verification:
+  levels: []
+  fail_fast: true
+recovery:
+  max_retries: 0
+  risk_threshold: 1.0
+  strategies: []
+executor:
+  max_steps_per_task: 8
+  context_char_budget: 4000
+llm:
+  provider: mock
+  model: mock-small
+  temperature: 0.2
+  max_tokens: 4096
+  base_url: null
+  api_key_env: null
+tools:
+  enabled:
+    - list_dir
+    - read_file
+    - search
+    - write_file

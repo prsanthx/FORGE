@@ -1,0 +1,14 @@
+id: long_horizon_persist
+difficulty: long_horizon
+title: Done, update, priority, persistence, filter
+prompt: |
+  I am not a programmer. Please mark a todo done so its done flag becomes true.
+  Please let me change a todo's title.
+  Blank titles must be rejected when the title changes.
+  Please add a priority of low, med, or high, defaulting to med.
+  Please reject any other priority.
+  Please save todos to a JSON file so they are still there after a new store is opened on that file.
+  Please filter the todo list by priority.
+  Keep add, list, get, and remove working.
+  Add tests for the new behavior.
+oracle: test_long_horizon_persist.py

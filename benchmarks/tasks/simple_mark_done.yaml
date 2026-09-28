@@ -1,0 +1,9 @@
+id: simple_mark_done
+difficulty: simple
+title: Mark a todo done
+prompt: |
+  I am not a programmer. Please add a way to mark a todo as done.
+  When a todo is marked done, its done flag becomes true.
+  Keep add, list, get, and remove working.
+  Add a unit test for marking a todo done.
+oracle: test_simple_mark_done.py

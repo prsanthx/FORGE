@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import json
+import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from forge.core.tools import execute_tool
 from forge.kg.query import GraphRetriever
@@ -26,6 +27,8 @@ Allowed actions and arguments:
 - finish: {"summary": "what changed"}
 Never invent a tool. Prefer reading a file before rewriting it. When you finish,
 the repository must contain the behavior described in EXPECTED_OUTPUT.
+When the user message includes SKILLS, treat them as constraints.
+Extra names under TOOLS are real tools with the same JSON shape.
 """
 
 
@@ -45,6 +48,8 @@ def build_prompt(
     context_pack: str,
     failure_memory: list[dict[str, Any]],
     planning: bool,
+    skill_block: str = "",
+    extra_tools: list[str] | None = None,
 ) -> str:
     sections = [
         f"GOAL:\n{goal.strip()}",
@@ -75,8 +80,14 @@ def build_prompt(
         )
     else:
         sections.append("DIAGNOSIS:\nnone")
-    tool_lines = "\n".join(f"- {name}" for name in tools)
+    listed = list(tools)
+    for name in extra_tools or []:
+        if name not in listed:
+            listed.append(name)
+    tool_lines = "\n".join(f"- {name}" for name in listed)
     sections.append(f"TOOLS:\n{tool_lines}")
+    if skill_block.strip():
+        sections.append(skill_block if skill_block.startswith("SKILLS:") else f"SKILLS:\n{skill_block}")
     public_steps = []
     for step in steps[-8:]:
         public_steps.append(
@@ -121,8 +132,13 @@ async def execute_task(
     failure_memory: list[dict[str, Any]],
     on_llm,
     on_tool,
+    skill_block: str = "",
+    extra_tools: list[str] | None = None,
+    mcp_call: Callable[[str, dict[str, Any]], tuple[bool, str]] | None = None,
 ) -> dict[str, Any]:
     tools = _enabled(cfg)
+    mcp_names = [name for name in (extra_tools or []) if name not in tools]
+    visible = tools + mcp_names
     planning = bool((cfg.get("features") or {}).get("planning"))
     use_pack = bool((cfg.get("features") or {}).get("context_packs")) and retriever is not None
     budget = int((cfg.get("executor") or {}).get("context_char_budget") or 4000)
@@ -142,10 +158,11 @@ async def execute_task(
             attempt=attempt,
             diagnosis=diagnosis,
             steps=steps,
-            tools=tools,
+            tools=visible,
             context_pack=context_pack,
             failure_memory=failure_memory if (cfg.get("features") or {}).get("failure_memory") else [],
             planning=planning,
+            skill_block=skill_block,
         )
         response = await llm.complete(
             [
@@ -169,6 +186,16 @@ async def execute_task(
                 "changed": changed,
                 "steps": len(steps),
             }
+        if action in mcp_names:
+            started = time.perf_counter()
+            if mcp_call is None:
+                ok, result = False, f"tool {action} is not connected"
+            else:
+                ok, result = mcp_call(action, args)
+            elapsed = int((time.perf_counter() - started) * 1000)
+            await on_tool(action, args, ok, result, elapsed)
+            steps.append({"action": action, "args": args, "ok": ok, "result": result, "thought": thought})
+            continue
         if action not in tools:
             result = f"tool {action} is disabled in this config"
             steps.append({"action": action, "args": args, "ok": False, "result": result, "thought": thought})

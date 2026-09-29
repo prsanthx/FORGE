@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmtMs, fmtRate, fmtWhen, isLive, statusTone } from "../format";
-import type { ForgeConfig, Repo, Run } from "../types";
+import type { ForgeConfig, Repo, Run, StudioSummary } from "../types";
 
 const SAMPLE =
   "I am not a programmer. Please add a way to mark a todo as done.\nWhen a todo is marked done, its done flag becomes true.\nKeep add, list, get, and remove working.\nAdd a unit test for marking a todo done.";
@@ -23,6 +23,7 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [ready, setReady] = useState(false);
+  const [inventory, setInventory] = useState<StudioSummary | null>(null);
 
   async function refresh() {
     const [repoRows, configRows, runRows] = await Promise.all([api.repos(), api.configs(), api.runs()]);
@@ -44,6 +45,14 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
     }, 3000);
     return () => window.clearInterval(timer);
   }, []);
+
+  useEffect(() => {
+    if (!config) return;
+    api
+      .studio(config)
+      .then((view) => setInventory(view.summary))
+      .catch(() => setInventory(null));
+  }, [config]);
 
   async function launch() {
     setBusy(true);
@@ -142,7 +151,12 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
                   </div>
                 );
               })}
-              <span className="ml-auto hidden text-[11px] text-faint sm:inline">
+              <a href="#/studio" className="ml-auto text-[11px] text-faint transition hover:text-ink">
+                {inventory
+                  ? `${inventory.tools_in_prompt} tools · ${inventory.skills_enabled} skills`
+                  : "Tools and skills"}
+              </a>
+              <span className="hidden text-[11px] text-faint sm:inline">
                 {selected?.llm?.provider || "mock"} / {selected?.llm?.model || "mock-small"}
               </span>
             </div>

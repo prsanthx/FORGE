@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 
 const NAV = [
   { href: "#/", label: "Agents", icon: "agents" },
+  { href: "#/studio", label: "Studio", icon: "studio" },
   { href: "#/repos", label: "Repositories", icon: "repo" },
   { href: "#/configs", label: "Configs", icon: "sliders" },
   { href: "#/benchmarks", label: "Benchmarks", icon: "grid" },
@@ -10,6 +11,7 @@ const NAV = [
 
 const TITLES: Record<string, string> = {
   "#/": "Agents",
+  "#/studio": "Studio",
   "#/repos": "Repositories",
   "#/configs": "Configs",
   "#/benchmarks": "Benchmarks",
@@ -87,6 +89,15 @@ function Icon({ name }: { name: string }) {
       <svg {...common}>
         <path d="M12 3l1.6 4.2L18 9l-4.4 1.8L12 15l-1.6-4.2L6 9l4.4-1.8L12 3z" />
         <path d="M18 14l.7 1.8L20.5 17l-1.8.7L18 19.5l-.7-1.8L15.5 17l1.8-.7L18 14z" />
+      </svg>
+    );
+  }
+  if (name === "studio") {
+    return (
+      <svg {...common}>
+        <path d="M8 7V5.5A1.5 1.5 0 0 1 9.5 4h5A1.5 1.5 0 0 1 16 5.5V7" />
+        <rect x="4" y="7" width="16" height="12" rx="2" />
+        <path d="M9 12h6M12 9v6" />
       </svg>
     );
   }

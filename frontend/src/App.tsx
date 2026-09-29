@@ -6,6 +6,7 @@ import Dashboard from "./pages/Dashboard";
 import Providers from "./pages/Providers";
 import Repos from "./pages/Repos";
 import RunDetail from "./pages/RunDetail";
+import Studio from "./pages/Studio";
 
 function useHash(): string {
   const [hash, setHash] = useState(window.location.hash || "#/");
@@ -22,6 +23,7 @@ export default function App() {
   const runMatch = hash.match(/^#\/runs\/([^/?]+)/);
   let page = <Dashboard onOpen={(id) => (window.location.hash = `#/runs/${id}`)} />;
   if (runMatch) page = <RunDetail id={runMatch[1]} />;
+  else if (hash.startsWith("#/studio")) page = <Studio />;
   else if (hash.startsWith("#/repos")) page = <Repos />;
   else if (hash.startsWith("#/configs")) page = <Configs />;
   else if (hash.startsWith("#/benchmarks")) page = <Benchmarks />;

@@ -15,6 +15,8 @@ from forge.benchmark.runner import run_benchmark
 from forge.llm.providers import DEFAULTS, PROVIDER_NAMES, build_provider
 from forge.service import ForgeService
 from forge.settings import list_config_names, load_benchmark_tasks, load_config, save_config
+from forge.studio import NotFound, StudioError
+from forge import studio as studio_api
 
 app = FastAPI(title="FORGE", version="0.1.0")
 app.add_middleware(
@@ -57,6 +59,47 @@ class BenchmarkBody(BaseModel):
     configs: list[str] = Field(default_factory=lambda: ["baseline", "planning", "planning_verify", "full_forge"])
     task_ids: list[str] | None = None
     llm: dict[str, Any] | None = None
+
+
+class SkillBody(BaseModel):
+    name: str
+    description: str = ""
+    body: str = ""
+    enabled: bool = True
+
+
+class SkillPatch(BaseModel):
+    name: str | None = None
+    description: str | None = None
+    body: str | None = None
+    enabled: bool | None = None
+
+
+class McpBody(BaseModel):
+    name: str
+    transport: str = "stdio"
+    command: str = ""
+    args: list[str] = Field(default_factory=list)
+    url: str = ""
+    enabled: bool = False
+
+
+class McpPatch(BaseModel):
+    name: str | None = None
+    transport: str | None = None
+    command: str | None = None
+    args: list[str] | None = None
+    url: str | None = None
+    enabled: bool | None = None
+
+
+def _studio_call(fn):
+    try:
+        return fn()
+    except NotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
+    except StudioError as exc:
+        raise HTTPException(400, str(exc)) from exc
 
 
 @app.get("/api/health")
@@ -307,3 +350,68 @@ def benchmark_csv(bench_id: str):
 
 def _sse(event: dict[str, Any]) -> str:
     return f"data: {json.dumps(event)}\n\n"
+
+
+@app.get("/api/studio")
+def studio_snapshot(config: str = "full_forge") -> dict[str, Any]:
+    return _studio_call(lambda: studio_api.snapshot(service.db, config))
+
+
+@app.post("/api/skills")
+def skill_create(body: SkillBody) -> dict[str, Any]:
+    return _studio_call(
+        lambda: studio_api.create_skill(
+            service.db,
+            name=body.name,
+            description=body.description,
+            body=body.body,
+            enabled=body.enabled,
+        )
+    )
+
+
+@app.put("/api/skills/{skill_id}")
+def skill_update(skill_id: str, body: SkillPatch) -> dict[str, Any]:
+    return _studio_call(lambda: studio_api.update_skill(service.db, skill_id, body.model_dump(exclude_unset=True)))
+
+
+@app.delete("/api/skills/{skill_id}")
+def skill_delete(skill_id: str) -> dict[str, bool]:
+    _studio_call(lambda: studio_api.delete_skill(service.db, skill_id))
+    return {"ok": True}
+
+
+@app.post("/api/mcp")
+def mcp_create(body: McpBody) -> dict[str, Any]:
+    return _studio_call(
+        lambda: studio_api.create_mcp(
+            service.db,
+            name=body.name,
+            transport=body.transport,
+            command=body.command,
+            args=body.args,
+            url=body.url,
+            enabled=body.enabled,
+        )
+    )
+
+
+@app.put("/api/mcp/{server_id}")
+def mcp_update(server_id: str, body: McpPatch) -> dict[str, Any]:
+    return _studio_call(lambda: studio_api.update_mcp(service.db, server_id, body.model_dump(exclude_unset=True)))
+
+
+@app.delete("/api/mcp/{server_id}")
+def mcp_delete(server_id: str) -> dict[str, bool]:
+    _studio_call(lambda: studio_api.delete_mcp(service.db, server_id))
+    return {"ok": True}
+
+
+@app.post("/api/mcp/{server_id}/probe")
+def mcp_probe(server_id: str) -> dict[str, Any]:
+    return _studio_call(lambda: studio_api.probe_mcp(service.db, server_id))
+
+
+@app.post("/api/mcp/demo")
+def mcp_demo() -> dict[str, Any]:
+    return _studio_call(lambda: studio_api.install_demo(service.db))

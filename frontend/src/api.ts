@@ -44,4 +44,26 @@ export const api = {
   benchmark: (id: string) => request<import("./types").Benchmark>(`/api/benchmarks/${id}`),
   runBenchmark: (body: { repo_id: string; configs: string[]; task_ids: string[] }) =>
     request<import("./types").Benchmark>("/api/benchmarks", { method: "POST", body: JSON.stringify(body) }),
+  studio: (config = "full_forge") =>
+    request<import("./types").StudioSnapshot>(`/api/studio?config=${encodeURIComponent(config)}`),
+  createSkill: (body: { name: string; description?: string; body: string; enabled?: boolean }) =>
+    request<import("./types").Skill>("/api/skills", { method: "POST", body: JSON.stringify(body) }),
+  updateSkill: (id: string, body: { name?: string; description?: string; body?: string; enabled?: boolean }) =>
+    request<import("./types").Skill>(`/api/skills/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteSkill: (id: string) => request<{ ok: boolean }>(`/api/skills/${id}`, { method: "DELETE" }),
+  createMcp: (body: {
+    name: string;
+    transport: string;
+    command?: string;
+    args?: string[];
+    url?: string;
+    enabled?: boolean;
+  }) => request<import("./types").McpServer>("/api/mcp", { method: "POST", body: JSON.stringify(body) }),
+  updateMcp: (
+    id: string,
+    body: { name?: string; transport?: string; command?: string; args?: string[]; url?: string; enabled?: boolean },
+  ) => request<import("./types").McpServer>(`/api/mcp/${id}`, { method: "PUT", body: JSON.stringify(body) }),
+  deleteMcp: (id: string) => request<{ ok: boolean }>(`/api/mcp/${id}`, { method: "DELETE" }),
+  probeMcp: (id: string) => request<import("./types").McpServer>(`/api/mcp/${id}/probe`, { method: "POST" }),
+  demoMcp: () => request<import("./types").McpServer>("/api/mcp/demo", { method: "POST" }),
 };

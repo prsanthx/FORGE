@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import Dag from "../components/Dag";
-import { elapsedSince, fmtMs, fmtRate, statusTone } from "../format";
+import { elapsedSince, fmtMs, fmtRate, isLive, statusTone } from "../format";
 import type { Run, RunEvent } from "../types";
+
+type Tab = "log" | "model" | "tools" | "failures";
 
 export default function RunDetail({ id }: { id: string }) {
   const [run, setRun] = useState<Run | null>(null);
   const [events, setEvents] = useState<RunEvent[]>([]);
   const [note, setNote] = useState("Please fix the failing check and keep existing tests passing.");
   const [error, setError] = useState("");
+  const [tab, setTab] = useState<Tab>("log");
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -35,10 +38,26 @@ export default function RunDetail({ id }: { id: string }) {
     };
   }, [id]);
 
-  if (!run) return <p className="text-mute">{error || "Loading run…"}</p>;
-  const live = ["queued", "planning", "running", "awaiting_human"].includes(run.status);
+  if (!run) {
+    return (
+      <div className="space-y-3">
+        <div className="skeleton h-8 w-2/3 rounded-lg" />
+        <div className="grid grid-cols-4 gap-3">
+          <div className="skeleton h-20 rounded-xl" />
+          <div className="skeleton h-20 rounded-xl" />
+          <div className="skeleton h-20 rounded-xl" />
+          <div className="skeleton h-20 rounded-xl" />
+        </div>
+        <p className="text-sm text-mute">{error || "Loading run"}</p>
+      </div>
+    );
+  }
+
+  const live = isLive(run.status);
   const elapsed = live ? elapsedSince(run.started_at) : run.metrics?.elapsed_ms || elapsedSince(run.started_at, run.ended_at);
   const calls = run.llm_calls || [];
+  const tools = run.tool_calls || [];
+  const failures = run.failures || [];
   const byTask = new Map<string, { inn: number; out: number }>();
   for (const call of calls) {
     const key = call.task_id || "plan";
@@ -47,101 +66,182 @@ export default function RunDetail({ id }: { id: string }) {
     row.out += call.tokens_out || 0;
     byTask.set(key, row);
   }
+  const tokenTotal = run.metrics?.tokens ?? calls.reduce((sum, call) => sum + call.tokens_in + call.tokens_out, 0);
+  const verify = run.metrics?.verification_pass_rate;
+  const maxTokens = Math.max(1, ...[...(run.tasks || [])].map((task) => {
+    const row = byTask.get(task.id) || { inn: 0, out: 0 };
+    return row.inn + row.out;
+  }));
 
   return (
-    <div className="space-y-5">
-      <header className="flex items-start justify-between gap-4">
-        <div>
-          <div className="kicker">Run {run.id}</div>
-          <h1 className="mt-1 max-w-4xl font-display text-3xl">{run.goal}</h1>
-          <p className="mt-2 text-sm text-mute">
-            {run.config_name}
-            {run.branch ? ` · ${run.branch}` : ""} {run.workspace ? `· ${run.workspace}` : ""}
+    <div className="stagger space-y-5">
+      <header className="flex flex-wrap items-start justify-between gap-4">
+        <div className="min-w-0">
+          <a href="#/" className="kicker hover:text-ink">← Agents</a>
+          <h1 className="mt-2 max-w-4xl text-[22px] font-semibold leading-snug tracking-tight">{run.goal}</h1>
+          <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-faint">
+            <span>{run.id}</span>
+            <span>{run.config_name}</span>
+            {run.branch && <span>{run.branch}</span>}
           </p>
         </div>
-        <span className={`rounded border px-3 py-1 text-sm ${statusTone(run.status)}`}>{run.status}</span>
+        <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] ${statusTone(run.status)}`}>
+          <span className={`status-dot ${live ? "is-live" : ""}`} />
+          {run.status.replaceAll("_", " ")}
+        </span>
       </header>
-      <section className="grid grid-cols-4 gap-3">
-        {[
-          ["Elapsed", fmtMs(elapsed)],
-          ["Tokens", String(run.metrics?.tokens ?? calls.reduce((sum, call) => sum + call.tokens_in + call.tokens_out, 0))],
-          ["Verification", fmtRate(run.metrics?.verification_pass_rate)],
-          ["Recovery", fmtRate(run.metrics?.recovery_success)],
-        ].map(([label, value]) => (
-          <div key={label} className="panel px-4 py-3">
-            <div className="kicker">{label}</div>
-            <div className="mt-1 text-2xl">{value}</div>
-          </div>
-        ))}
+
+      <section className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <Metric label="Elapsed" value={fmtMs(elapsed)} hint={live ? "Still running" : "Finished"} />
+        <Metric label="Tokens" value={tokenTotal.toLocaleString()} hint={`${calls.length} model calls`} />
+        <Metric label="Verification" value={fmtRate(verify)} hint="Final funnel" meter={typeof verify === "number" ? verify : undefined} />
+        <Metric label="Recovery" value={fmtRate(run.metrics?.recovery_success)} hint={failures.length ? `${failures.length} failures` : "No failures"} />
       </section>
-      {run.plan?.summary && <p className="text-sm text-mute">{run.plan.summary}</p>}
-      {run.error && <p className="text-sm text-bad">{run.error}</p>}
+
+      {run.plan?.phases && run.plan.phases.length > 0 && (
+        <section className="panel flex gap-2 overflow-x-auto p-3">
+          {run.plan.phases.map((phase, index) => (
+            <div key={phase.id} className="flex min-w-[140px] items-center gap-2 rounded-lg bg-white/[0.03] px-3 py-2">
+              <span className="font-mono text-[11px] text-faint">{String(index + 1).padStart(2, "0")}</span>
+              <span className="text-[13px]">{phase.title}</span>
+            </div>
+          ))}
+        </section>
+      )}
+      {run.plan?.summary && <p className="text-[13px] leading-6 text-mute">{run.plan.summary}</p>}
+      {run.error && <p className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-sm text-bad">{run.error}</p>}
+
       {run.status === "awaiting_human" && (
-        <section className="panel border-info/40 p-4">
-          <div className="kicker">Ask human</div>
+        <section className="panel border-info/30 p-4">
+          <div className="kicker">Needs a person</div>
           <p className="mt-2 text-sm">{run.human_question}</p>
-          <textarea className="mt-3 h-20 w-full rounded border border-line bg-black/30 p-2 text-sm" value={note} onChange={(event) => setNote(event.target.value)} />
+          <textarea className="field mt-3 h-20" value={note} onChange={(event) => setNote(event.target.value)} />
           <button
-            className="mt-2 rounded bg-info px-3 py-1.5 text-sm text-black"
+            className="btn-primary mt-3"
             onClick={() => api.resume(id, note).then(() => api.run(id).then(setRun)).catch((err: Error) => setError(err.message))}
           >
-            Resume with this note
+            Resume
           </button>
         </section>
       )}
+
       <section className="panel p-4">
-        <div className="kicker">Task graph</div>
-        <div className="mt-3">
-          <Dag tasks={run.tasks || []} />
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-[13px] font-medium">Task graph</div>
+          <div className="text-[11px] text-faint">{run.tasks?.length || 0} tasks</div>
         </div>
+        <Dag tasks={run.tasks || []} />
       </section>
-      <section className="grid grid-cols-[1.1fr_0.9fr] gap-4">
+
+      <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="panel p-4">
-          <div className="kicker">Developer log</div>
-          <div className="mt-3 h-80 overflow-auto rounded bg-black/40 p-3 font-mono text-xs leading-5">
-            {events.map((event) => (
-              <div key={event.id}>
-                <span className="text-brass">{event.kind.padEnd(8, " ")}</span>
-                <span className="text-ink/90">{event.payload.message}</span>
-              </div>
+          <div className="mb-3 flex items-center gap-1">
+            {(["log", "model", "tools", "failures"] as Tab[]).map((item) => (
+              <button
+                key={item}
+                className={`rounded-md px-2.5 py-1 text-[12px] capitalize transition ${tab === item ? "bg-white/10 text-ink" : "text-mute hover:text-ink"}`}
+                onClick={() => setTab(item)}
+              >
+                {item}
+                {item === "model" && calls.length ? ` ${calls.length}` : ""}
+                {item === "tools" && tools.length ? ` ${tools.length}` : ""}
+                {item === "failures" && failures.length ? ` ${failures.length}` : ""}
+              </button>
             ))}
-            {events.length === 0 && <div className="text-mute">Waiting for events…</div>}
           </div>
-        </div>
-        <div className="panel p-4">
-          <div className="kicker">LLM calls</div>
-          <div className="mt-3 max-h-80 space-y-2 overflow-auto">
-            {calls.map((call) => (
-              <details key={call.id} className="rounded border border-line px-3 py-2 text-sm">
-                <summary className="cursor-pointer">
-                  {call.phase} · {call.provider}/{call.model} · {call.tokens_in + call.tokens_out} tok · {call.latency_ms}ms
-                </summary>
-                <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] text-mute">{call.response_preview}</pre>
-              </details>
-            ))}
-            {calls.length === 0 && <p className="text-sm text-mute">No model calls yet.</p>}
-          </div>
-        </div>
-      </section>
-      <section className="panel p-4">
-        <div className="kicker">Tokens by task</div>
-        <div className="mt-3 space-y-2">
-          {[...(run.tasks || [])].map((task) => {
-            const row = byTask.get(task.id) || { inn: 0, out: 0 };
-            const total = row.inn + row.out;
-            const width = Math.min(100, total / 20);
-            return (
-              <div key={task.id} className="grid grid-cols-[180px_1fr_80px] items-center gap-3 text-sm">
-                <div className="truncate text-mute">{task.task_key}</div>
-                <div className="h-2 rounded bg-black/40">
-                  <div className="h-2 rounded bg-brass" style={{ width: `${width}%` }} />
+          {tab === "log" && (
+            <div className="timeline h-80 space-y-3 overflow-auto pr-1">
+              {events.map((event) => (
+                <div key={event.id} className="timeline-item">
+                  <span className="timeline-dot" />
+                  <div className="text-[10px] font-medium uppercase tracking-wider text-faint">{event.kind}</div>
+                  <div className="text-[13px] leading-5 text-ink/90">{event.payload.message}</div>
                 </div>
-                <div className="text-right font-mono text-xs">{total}</div>
-              </div>
-            );
-          })}
+              ))}
+              {events.length === 0 && <div className="text-sm text-mute">Waiting for the first event.</div>}
+            </div>
+          )}
+          {tab === "model" && (
+            <div className="max-h-80 space-y-2 overflow-auto">
+              {calls.map((call) => (
+                <details key={call.id} className="rounded-lg border border-white/8 bg-white/[0.02] px-3 py-2 text-sm">
+                  <summary className="cursor-pointer text-[13px]">
+                    {call.phase} · {call.provider}/{call.model}
+                    <span className="ml-2 font-mono text-[11px] text-faint">{call.tokens_in + call.tokens_out} tok · {call.latency_ms}ms</span>
+                  </summary>
+                  <pre className="mt-2 whitespace-pre-wrap font-mono text-[11px] leading-5 text-mute">{call.response_preview}</pre>
+                </details>
+              ))}
+              {calls.length === 0 && <p className="text-sm text-mute">No model calls yet.</p>}
+            </div>
+          )}
+          {tab === "tools" && (
+            <div className="max-h-80 space-y-2 overflow-auto">
+              {tools.map((call) => (
+                <div key={call.id} className="rounded-lg border border-white/8 px-3 py-2">
+                  <div className="flex items-center justify-between text-[13px]">
+                    <span className="font-mono">{call.name}</span>
+                    <span className={call.ok ? "text-ok" : "text-bad"}>{call.ok ? "ok" : "failed"} · {call.elapsed_ms}ms</span>
+                  </div>
+                  <pre className="mt-1 whitespace-pre-wrap font-mono text-[11px] text-mute">{call.result_preview}</pre>
+                </div>
+              ))}
+              {tools.length === 0 && <p className="text-sm text-mute">No tool calls yet.</p>}
+            </div>
+          )}
+          {tab === "failures" && (
+            <div className="max-h-80 space-y-2 overflow-auto">
+              {failures.map((failure, index) => (
+                <div key={`${failure.task_key}-${index}`} className="rounded-lg border border-white/8 px-3 py-2 text-[13px]">
+                  <div className="flex items-center justify-between">
+                    <span className="font-mono">{failure.task_key}</span>
+                    <span className={failure.resolved ? "text-ok" : "text-bad"}>{failure.resolved ? "resolved" : "open"}</span>
+                  </div>
+                  <div className="mt-1 text-mute">{failure.failure_class} · {failure.strategy} · attempt {failure.attempt}</div>
+                </div>
+              ))}
+              {failures.length === 0 && <p className="text-sm text-mute">Nothing failed. Recovery stays idle until a check misses.</p>}
+            </div>
+          )}
+        </div>
+        <div className="panel p-4">
+          <div className="text-[13px] font-medium">Tokens by task</div>
+          <div className="mt-4 space-y-3">
+            {(run.tasks || []).map((task) => {
+              const row = byTask.get(task.id) || { inn: 0, out: 0 };
+              const total = row.inn + row.out;
+              const width = Math.round((total / maxTokens) * 100);
+              return (
+                <div key={task.id}>
+                  <div className="mb-1 flex items-center justify-between text-[12px]">
+                    <span className="truncate text-mute">{task.task_key}</span>
+                    <span className="font-mono text-faint">{total.toLocaleString()}</span>
+                  </div>
+                  <div className="meter">
+                    <span style={{ width: `${width}%` }} />
+                  </div>
+                </div>
+              );
+            })}
+            {(run.tasks || []).length === 0 && <p className="text-sm text-mute">Tasks appear after planning.</p>}
+          </div>
         </div>
       </section>
+    </div>
+  );
+}
+
+function Metric({ label, value, hint, meter }: { label: string; value: string; hint: string; meter?: number }) {
+  return (
+    <div className="panel px-4 py-3">
+      <div className="kicker">{label}</div>
+      <div className="mt-1 text-[22px] font-semibold tracking-tight">{value}</div>
+      <div className="text-[11px] text-faint">{hint}</div>
+      {typeof meter === "number" && (
+        <div className="meter mt-2">
+          <span style={{ width: `${Math.round(meter * 100)}%` }} />
+        </div>
+      )}
     </div>
   );
 }

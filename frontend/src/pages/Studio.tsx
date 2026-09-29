@@ -100,11 +100,12 @@ export default function Studio() {
                   {summary.skills_enabled} skills ride along as instructions.
                 </p>
               </div>
-              <div className="grid grid-cols-3 gap-3 text-center">
+              <div className="grid grid-cols-2 gap-3 text-center sm:grid-cols-4">
                 {[
                   ["Workspace", summary.builtin_enabled],
                   ["Finish", summary.finish],
                   ["MCP", summary.mcp_tools],
+                  ["Skills", summary.skills_enabled],
                 ].map(([label, value]) => (
                   <div key={String(label)} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
                     <div className="font-mono text-[20px] font-medium">{value}</div>
@@ -118,13 +119,13 @@ export default function Studio() {
               <div className="bg-white/80 transition-all" style={{ width: share(summary.finish) }} />
               <div className="bg-info transition-all" style={{ width: share(summary.mcp_tools) }} />
             </div>
-            <pre className="mt-4 max-h-40 overflow-auto rounded-xl bg-black/40 p-3 font-mono text-[12px] leading-6 text-ink">
+            <pre className="mt-4 max-h-72 overflow-auto rounded-xl bg-black/40 p-3 font-mono text-[12px] leading-6 text-ink">
               {["TOOLS:", ...view.prompt_tools.map((name) => `- ${name}`)].join("\n")}
             </pre>
             {error && <p className="mt-3 text-[12px] text-bad">{error}</p>}
           </section>
 
-          <section className="grid items-start gap-4 xl:grid-cols-3">
+          <section className="grid items-start gap-4 lg:grid-cols-3">
             <article className="panel p-4">
               <div className="flex items-center justify-between">
                 <h2 className="text-[14px] font-medium">Tools</h2>

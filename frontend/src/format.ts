@@ -18,11 +18,29 @@ export function elapsedSince(iso?: string | null, ended?: string | null): number
   return Math.max(0, end - start);
 }
 
+export function isLive(status: string): boolean {
+  return ["queued", "planning", "running", "awaiting_human"].includes(status);
+}
+
 export function statusTone(status: string): string {
-  if (status === "completed" || status === "done") return "text-ok border-ok/40";
-  if (status === "failed") return "text-bad border-bad/40";
-  if (status === "completed_with_failures") return "text-brass border-brass/40";
-  if (status === "awaiting_human") return "text-info border-info/40";
-  if (status === "running" || status === "planning") return "text-brass border-brass/50";
-  return "text-mute border-line";
+  if (status === "completed" || status === "done") return "text-ok border-ok/30 bg-ok/10";
+  if (status === "failed") return "text-bad border-bad/30 bg-bad/10";
+  if (status === "completed_with_failures") return "text-accent border-accent/30 bg-accent/10";
+  if (status === "awaiting_human") return "text-info border-info/30 bg-info/10";
+  if (status === "running" || status === "planning" || status === "queued") return "text-accent border-accent/40 bg-accent/10";
+  return "text-mute border-white/10 bg-white/[0.04]";
+}
+
+export function fmtWhen(iso?: string | null): string {
+  if (!iso) return "";
+  const then = Date.parse(iso);
+  if (Number.isNaN(then)) return iso;
+  const seconds = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (seconds < 10) return "just now";
+  if (seconds < 60) return `${seconds}s ago`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours}h ago`;
+  return new Date(then).toLocaleString();
 }

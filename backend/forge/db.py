@@ -140,6 +140,27 @@ CREATE TABLE IF NOT EXISTS kg_edges (
     rel TEXT NOT NULL,
     PRIMARY KEY (repo_id, src, dst, rel)
 );
+CREATE TABLE IF NOT EXISTS skills (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    description TEXT,
+    body TEXT,
+    enabled INTEGER DEFAULT 1,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS mcp_servers (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL UNIQUE,
+    transport TEXT NOT NULL,
+    command TEXT,
+    args TEXT,
+    url TEXT,
+    enabled INTEGER DEFAULT 0,
+    status TEXT,
+    tools TEXT,
+    error TEXT,
+    created_at TEXT NOT NULL
+);
 """
 
 
@@ -415,3 +436,97 @@ class Database:
             cell["metrics"] = _loads(cell.get("metrics"), {})
         row["cells"] = cells
         return row
+
+    # --- studio: skills and MCP servers ---
+    def list_skills(self) -> list[dict[str, Any]]:
+        return [self._public_skill(row) for row in self.query("SELECT * FROM skills ORDER BY created_at ASC")]
+
+    def get_skill(self, skill_id: str) -> dict[str, Any] | None:
+        row = self.one("SELECT * FROM skills WHERE id = ?", (skill_id,))
+        return self._public_skill(row) if row else None
+
+    def insert_skill(self, row: dict[str, Any]) -> None:
+        payload = dict(row)
+        payload["enabled"] = 1 if payload.get("enabled", True) else 0
+        self.execute(
+            """INSERT INTO skills (id, name, description, body, enabled, created_at)
+               VALUES (:id, :name, :description, :body, :enabled, :created_at)""",
+            payload,
+        )
+
+    def update_skill(self, skill_id: str, **fields: Any) -> None:
+        allowed = {key: value for key, value in fields.items() if key in {"name", "description", "body", "enabled"}}
+        if not allowed:
+            return
+        if "enabled" in allowed:
+            allowed["enabled"] = 1 if allowed["enabled"] else 0
+        cols = ", ".join(f"{key} = ?" for key in allowed)
+        self.execute(f"UPDATE skills SET {cols} WHERE id = ?", (*allowed.values(), skill_id))
+
+    def delete_skill(self, skill_id: str) -> None:
+        self.execute("DELETE FROM skills WHERE id = ?", (skill_id,))
+
+    def list_mcp_servers(self) -> list[dict[str, Any]]:
+        return [self._public_mcp(row) for row in self.query("SELECT * FROM mcp_servers ORDER BY created_at ASC")]
+
+    def get_mcp_server(self, server_id: str) -> dict[str, Any] | None:
+        row = self.one("SELECT * FROM mcp_servers WHERE id = ?", (server_id,))
+        return self._public_mcp(row) if row else None
+
+    def insert_mcp_server(self, row: dict[str, Any]) -> None:
+        payload = dict(row)
+        payload["enabled"] = 1 if payload.get("enabled") else 0
+        payload["args"] = json.dumps(payload.get("args") or [])
+        payload["tools"] = json.dumps(payload.get("tools") or [])
+        self.execute(
+            """INSERT INTO mcp_servers
+               (id, name, transport, command, args, url, enabled, status, tools, error, created_at)
+               VALUES (:id, :name, :transport, :command, :args, :url, :enabled, :status, :tools, :error, :created_at)""",
+            payload,
+        )
+
+    def update_mcp_server(self, server_id: str, **fields: Any) -> None:
+        allowed = {
+            key: value
+            for key, value in fields.items()
+            if key in {"name", "transport", "command", "args", "url", "enabled", "status", "tools", "error"}
+        }
+        if not allowed:
+            return
+        if "enabled" in allowed:
+            allowed["enabled"] = 1 if allowed["enabled"] else 0
+        if "args" in allowed and not isinstance(allowed["args"], str):
+            allowed["args"] = json.dumps(allowed["args"] or [])
+        if "tools" in allowed and not isinstance(allowed["tools"], str):
+            allowed["tools"] = json.dumps(allowed["tools"] or [])
+        cols = ", ".join(f"{key} = ?" for key in allowed)
+        self.execute(f"UPDATE mcp_servers SET {cols} WHERE id = ?", (*allowed.values(), server_id))
+
+    def delete_mcp_server(self, server_id: str) -> None:
+        self.execute("DELETE FROM mcp_servers WHERE id = ?", (server_id,))
+
+    def _public_skill(self, row: dict[str, Any] | None) -> dict[str, Any]:
+        if not row:
+            return {}
+        item = dict(row)
+        item["enabled"] = bool(item.get("enabled"))
+        item["description"] = item.get("description") or ""
+        item["body"] = item.get("body") or ""
+        return item
+
+    def _public_mcp(self, row: dict[str, Any] | None) -> dict[str, Any]:
+        if not row:
+            return {}
+        item = dict(row)
+        item["enabled"] = bool(item.get("enabled"))
+        item["command"] = item.get("command") or ""
+        item["url"] = item.get("url") or ""
+        item["status"] = item.get("status") or "pending"
+        item["error"] = item.get("error") or ""
+        item["args"] = _loads(item.get("args"), [])
+        item["tools"] = _loads(item.get("tools"), [])
+        if not isinstance(item["args"], list):
+            item["args"] = []
+        if not isinstance(item["tools"], list):
+            item["tools"] = []
+        return item

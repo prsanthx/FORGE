@@ -19,6 +19,7 @@ from forge.kg.indexer import index_repo
 from forge.kg.query import GraphRetriever
 from forge.llm.providers import build_provider
 from forge.settings import flag, load_config
+from forge.studio import call_mcp_tool, load_prompt_extras
 from forge.util import new_id, redact, utc_now
 
 
@@ -301,6 +302,7 @@ class ForgeService:
                 if name == "write_file" and ok:
                     changed.append(str(args.get("path")))
 
+            skill_block, extra_tools = load_prompt_extras(self.db)
             result = await execute_task(
                 llm=llm,
                 cfg=cfg,
@@ -313,6 +315,9 @@ class ForgeService:
                 failure_memory=memory,
                 on_llm=on_llm,
                 on_tool=on_tool,
+                skill_block=skill_block,
+                extra_tools=extra_tools,
+                mcp_call=lambda name, args: call_mcp_tool(self.db, name, args),
             )
             elapsed_ms = int((asyncio.get_event_loop().time() - started) * 1000)
             if not verify_on:

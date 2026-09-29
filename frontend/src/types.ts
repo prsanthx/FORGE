@@ -128,3 +128,57 @@ export type ProviderInfo = {
   base_url: string;
   api_key_env: string;
 };
+
+export type BuiltinTool = {
+  name: string;
+  group: string;
+  summary: string;
+  enabled: boolean;
+  always: boolean;
+};
+
+export type Skill = {
+  id: string;
+  name: string;
+  description: string;
+  body: string;
+  enabled: boolean;
+  created_at: string;
+};
+
+export type McpTool = {
+  name: string;
+  prompt_name: string;
+  description: string;
+};
+
+export type McpServer = {
+  id: string;
+  name: string;
+  transport: string;
+  command: string;
+  args: string[];
+  url: string;
+  enabled: boolean;
+  status: string;
+  tools: McpTool[];
+  error: string;
+  created_at: string;
+};
+
+export type StudioSummary = {
+  builtin_enabled: number;
+  finish: number;
+  mcp_tools: number;
+  skills_enabled: number;
+  tools_in_prompt: number;
+};
+
+export type StudioSnapshot = {
+  config: string;
+  builtin: BuiltinTool[];
+  skills: Skill[];
+  mcp: McpServer[];
+  prompt_tools: string[];
+  summary: StudioSummary;
+};

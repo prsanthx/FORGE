@@ -50,7 +50,7 @@ export default function Configs() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="kicker">Control surface</div>
-          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Configs</h1>
+          <h1 className="page-title">Configs</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
             Baseline through full FORGE. Toggles write back to the YAML files the harness reads.
           </p>

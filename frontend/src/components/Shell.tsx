@@ -23,6 +23,8 @@ const TITLES: Record<string, string> = {
   "#/settings": "Settings",
 };
 
+const SIDEBAR_KEY = "forge-sidebar";
+
 function routeOf(hash: string): string {
   const route = hash.split("?")[0] || "#/";
   if (route === "#/customize") return "#/studio";
@@ -32,8 +34,10 @@ function routeOf(hash: string): string {
 
 export default function Shell({ hash, children }: { hash: string; children: ReactNode }) {
   const route = routeOf(hash);
-  const title = route.startsWith("#/runs/") ? "Run" : TITLES[route] || TITLES[hash.split("?")[0]] || "FORGE";
+  const title = route.startsWith("#/runs/") ? "Run" : TITLES[route] || "FORGE";
   const [open, setOpen] = useState(false);
+  const [narrow, setNarrow] = useState(() => window.matchMedia("(max-width: 767px)").matches);
+  const [collapsed, setCollapsed] = useState(() => localStorage.getItem(SIDEBAR_KEY) === "collapsed");
   const [runs, setRuns] = useState<Run[]>([]);
   const [configs, setConfigs] = useState<ForgeConfig[]>([]);
   const [configName, setConfigName] = useState(readSelectedConfig());
@@ -48,6 +52,14 @@ export default function Shell({ hash, children }: { hash: string; children: Reac
       media.removeEventListener("change", onTheme);
       window.removeEventListener("forge-theme", onTheme);
     };
+  }, []);
+
+  useEffect(() => {
+    const query = window.matchMedia("(max-width: 767px)");
+    const onChange = () => setNarrow(query.matches);
+    onChange();
+    query.addEventListener("change", onChange);
+    return () => query.removeEventListener("change", onChange);
   }, []);
 
   useEffect(() => {
@@ -69,80 +81,84 @@ export default function Shell({ hash, children }: { hash: string; children: Reac
     setOpen(false);
   }, [hash]);
 
+  function toggleCollapsed() {
+    setCollapsed((current) => {
+      const next = !current;
+      localStorage.setItem(SIDEBAR_KEY, next ? "collapsed" : "open");
+      return next;
+    });
+  }
+
+  const rail = collapsed && !narrow;
   const selected = configs.find((item) => item.name === configName) || configs.find((item) => item.name === "full_forge") || configs[0];
   const provider = selected?.llm?.provider || "mock";
   const model = selected?.llm?.model || "mock-small";
   const host = hostOf(selected?.llm?.base_url);
   const activeRuns = runs.filter((run) => isLive(run.status));
-  const earlier = runs.filter((run) => !isLive(run.status)).slice(0, 6);
+  const earlier = runs.filter((run) => !isLive(run.status)).slice(0, 8);
 
   return (
-    <div className="min-h-screen md:grid md:grid-cols-[248px_1fr]">
+    <div className="app-frame" data-collapsed={rail ? "true" : "false"}>
       {open && (
-        <button className="fixed inset-0 z-30 bg-ink/30 md:hidden" aria-label="Close menu" onClick={() => setOpen(false)} />
+        <button className="drawer-back" aria-label="Close menu" onClick={() => setOpen(false)} />
       )}
-      <aside
-        className={`${open ? "flex" : "hidden"} fixed inset-y-0 left-0 z-40 w-[248px] flex-col border-r border-line bg-sidebar px-3 py-4 md:sticky md:top-0 md:flex md:h-screen`}
-      >
-        <a href="#/" className="flex items-center gap-2.5 px-2">
-          <span className="grid h-8 w-8 place-items-center rounded-lg bg-ink text-[13px] font-semibold text-canvas">F</span>
-          <span>
-            <span className="block text-[13px] font-semibold tracking-tight">FORGE</span>
-            <span className="block text-[11px] text-faint">Reliable agent harness</span>
-          </span>
+      <aside className={`side ${open ? "is-open" : ""}`}>
+        <div className="logo-row">
+          <a href="#/" className="brand" title="FORGE">
+            <Mark />
+            <span className="brand-copy">FORGE</span>
+          </a>
+          <button
+            className="icon-btn only-wide"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            title={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            onClick={toggleCollapsed}
+          >
+            <Icon name="panel" />
+          </button>
+        </div>
+        <a href="#/" className="new-session" title="New session">
+          <Icon name="plus" />
+          <span>New session</span>
         </a>
-        <a href="#/" className="btn-primary mt-4 w-full">
-          New session
-        </a>
-        <nav className="mt-4 flex flex-col gap-0.5">
+        <nav className="flex flex-col gap-0.5" aria-label="Primary">
           {NAV.map((item) => {
             const active = item.href === "#/" ? route === "#/" || route === "" : route.startsWith(item.href);
             return (
-              <a key={item.href} href={item.href} className={`nav-link ${active ? "active" : ""}`}>
+              <a key={item.href} href={item.href} className={`nav-link ${active ? "active" : ""}`} title={item.label}>
                 <Icon name={item.icon} />
-                {item.label}
+                <span>{item.label}</span>
               </a>
             );
           })}
         </nav>
-        <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-auto px-1">
-          {activeRuns.length > 0 && (
-            <RunGroup label="Active" runs={activeRuns} />
-          )}
-          <RunGroup label="Earlier" runs={earlier} empty="No sessions yet" />
+        <div className="side-scroll mt-3">
+          {activeRuns.length > 0 && <RunGroup label="Active" runs={activeRuns} current={route} />}
+          <RunGroup label="Sessions" runs={earlier} current={route} empty="No sessions yet" />
         </div>
-        <div className="mt-3 border-t border-line pt-3">
-          <a href="#/settings" className={`nav-link ${route.startsWith("#/providers") ? "active" : ""}`}>
+        <div className="side-foot">
+          <a href="#/settings" className={`nav-link ${route.startsWith("#/providers") ? "active" : ""}`} title="Settings">
             <Icon name="settings" />
-            Settings
+            <span>Settings</span>
           </a>
-          <div className="mt-2 rounded-xl border border-line bg-panel px-3 py-2.5">
-            <div className="flex items-center gap-2 text-[12px] text-ink">
-              <span className="status-dot text-ok" />
-              Local harness
-            </div>
-            <p className="mt-1 text-[11px] leading-5 text-faint">
-              Plan, verify, and recover. The deliverable is a tested branch.
-            </p>
-          </div>
         </div>
       </aside>
-      <div className="min-w-0">
-        <header className="sticky top-0 z-20 flex items-center justify-between gap-3 border-b border-line bg-canvas/90 px-4 py-3 backdrop-blur md:px-8">
-          <div className="flex items-center gap-2">
-            <button className="btn px-2 py-1 md:hidden" aria-label="Open menu" onClick={() => setOpen(true)}>
+      <div className="center">
+        <header className="center-bar">
+          <div className="flex min-w-0 items-center gap-2">
+            <button className="icon-btn only-narrow" aria-label="Open menu" onClick={() => setOpen(true)}>
               <Icon name="menu" />
             </button>
-            <div className="text-[13px] font-medium">{title}</div>
+            <div className="truncate text-[13px] font-medium">{title}</div>
           </div>
-          <div className="flex items-center gap-2 text-[11px] text-faint" title={selected ? `${selected.name} environment` : "Environment"}>
-            <span className="rounded-md border border-line bg-panel px-1.5 py-0.5 font-mono">{host}</span>
-            <span className="font-mono">
+          <div className="flex min-w-0 items-center gap-2 text-[11px] text-faint" title={selected ? `${selected.name} environment` : "Environment"}>
+            <span className="rounded-md border border-line bg-elevated px-1.5 py-0.5 font-mono text-mute">{host}</span>
+            <span className="hidden truncate font-mono sm:inline">
               {provider} / {model}
             </span>
           </div>
         </header>
-        <main className="min-w-0 px-4 py-6 md:px-8 md:py-7">
+        <main className="center-body">
           <div key={route} className="page-enter mx-auto max-w-6xl">
             {children}
           </div>
@@ -152,19 +168,24 @@ export default function Shell({ hash, children }: { hash: string; children: Reac
   );
 }
 
-function RunGroup({ label, runs, empty }: { label: string; runs: Run[]; empty?: string }) {
+function RunGroup({ label, runs, empty, current }: { label: string; runs: Run[]; empty?: string; current: string }) {
   return (
-    <div>
-      <div className="px-1.5 text-[10px] font-medium uppercase tracking-wider text-faint">{label}</div>
-      {runs.length === 0 && empty && <p className="px-1.5 py-1 text-[12px] text-faint">{empty}</p>}
+    <div className="mb-3">
+      <div className="session-label">{label}</div>
+      {runs.length === 0 && empty && <p className="px-2 py-1 text-[12px] text-faint">{empty}</p>}
       <ul className="mt-1 space-y-0.5">
-        {runs.map((run) => (
-          <li key={run.id}>
-            <a href={`#/runs/${run.id}`} className="block truncate rounded-md px-1.5 py-1 text-[12px] text-mute hover:bg-elevated hover:text-ink">
-              {run.goal.replace(/\s+/g, " ").slice(0, 42)}
-            </a>
-          </li>
-        ))}
+        {runs.map((run) => {
+          const href = `#/runs/${run.id}`;
+          const active = current === href;
+          return (
+            <li key={run.id}>
+              <a href={href} className={`session-link ${active ? "active" : ""}`} title={run.goal}>
+                {isLive(run.status) && <span className="status-dot is-live mr-2 inline-block align-middle text-accent" />}
+                {run.goal.replace(/\s+/g, " ").slice(0, 48)}
+              </a>
+            </li>
+          );
+        })}
       </ul>
     </div>
   );
@@ -177,6 +198,17 @@ function hostOf(baseUrl?: string | null): string {
   } catch {
     return baseUrl;
   }
+}
+
+function Mark() {
+  return (
+    <span className="mark" aria-hidden>
+      <svg viewBox="0 0 16 16" className="h-3.5 w-3.5" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round">
+        <path d="M3 11.5 8 4l5 7.5" />
+        <path d="M5.2 11.5h5.6" />
+      </svg>
+    </span>
+  );
 }
 
 function Icon({ name }: { name: string }) {
@@ -234,6 +266,21 @@ function Icon({ name }: { name: string }) {
     return (
       <svg {...common}>
         <path d="M4 7h16M4 12h16M4 17h16" />
+      </svg>
+    );
+  }
+  if (name === "plus") {
+    return (
+      <svg {...common}>
+        <path d="M12 5v14M5 12h14" />
+      </svg>
+    );
+  }
+  if (name === "panel") {
+    return (
+      <svg {...common}>
+        <rect x="3.5" y="4.5" width="17" height="15" rx="2" />
+        <path d="M9 4.5v15" />
       </svg>
     );
   }

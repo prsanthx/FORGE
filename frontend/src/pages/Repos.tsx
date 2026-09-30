@@ -68,7 +68,7 @@ export default function Repos() {
     <div className="stagger space-y-6">
       <header>
         <div className="kicker">Knowledge graph</div>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Repositories</h1>
+        <h1 className="page-title">Repositories</h1>
         <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
           Local folders and GitHub repositories. Indexing builds the file, symbol, module, dependency, and test graph the model queries when the prompt is full.
         </p>
@@ -152,7 +152,7 @@ export default function Repos() {
               {Object.entries(selected.kg_stats.kinds).map(([kind, count]) => (
                 <div key={kind} className="rounded-lg bg-elevated px-3 py-2">
                   <div className="text-[11px] capitalize text-faint">{kind}</div>
-                  <div className="text-lg font-semibold">{count}</div>
+                  <div className="text-lg font-medium">{count}</div>
                 </div>
               ))}
             </div>

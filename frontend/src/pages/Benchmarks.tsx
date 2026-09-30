@@ -65,7 +65,7 @@ export default function Benchmarks() {
     <div className="stagger space-y-5">
       <header>
         <div className="kicker">Ablation matrix</div>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Benchmarks</h1>
+        <h1 className="page-title">Benchmarks</h1>
         <p className="mt-2 max-w-3xl text-[13px] leading-6 text-mute">
           Each cell is a real harness run scored by an oracle the agent never sees. A dash means that metric did not apply.
         </p>

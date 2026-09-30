@@ -71,7 +71,7 @@ export default function Providers() {
     <div className="stagger space-y-5">
       <header>
         <div className="kicker">Preferences</div>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Settings</h1>
+        <h1 className="page-title">Settings</h1>
         <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
           Appearance stays on this machine. Provider health checks are ephemeral until you save a provider into a config.
         </p>

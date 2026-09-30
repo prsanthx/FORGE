@@ -80,29 +80,20 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
   });
 
   return (
-    <div className="stagger space-y-6">
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <div className="kicker">Workspace</div>
-          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Sessions</h1>
-          <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
-            Describe the change. FORGE plans it, checks the result, and recovers when the model slips.
-          </p>
-        </div>
-      </header>
+    <div className="stagger space-y-8">
+      <div className="mx-auto flex w-full max-w-3xl flex-col pt-2 md:pt-8">
+        <h1 className="page-title text-center">What should FORGE change?</h1>
+        <p className="mx-auto mt-2 max-w-xl text-center text-[13px] leading-6 text-mute">
+          Describe the change. FORGE plans it, checks the result, and recovers when the model slips.
+        </p>
 
       {!ready ? (
-        <div className="grid gap-3">
+        <div className="mt-6 grid gap-3">
           <div className="skeleton h-40 rounded-2xl" />
-          <div className="grid grid-cols-3 gap-3">
-            <div className="skeleton h-20 rounded-xl" />
-            <div className="skeleton h-20 rounded-xl" />
-            <div className="skeleton h-20 rounded-xl" />
-          </div>
         </div>
       ) : (
         <>
-          <section className="composer p-3 sm:p-4">
+          <section className="composer mt-5 p-3 sm:p-4">
             <div className="flex items-center justify-between px-1">
               <span className="text-[12px] font-medium text-mute">New run</span>
               <span className="font-mono text-[11px] text-faint">⌘ Enter</span>
@@ -168,7 +159,12 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
               </span>
             </div>
           </section>
+        </>
+      )}
+      </div>
 
+      {ready && (
+        <>
           <section className="grid grid-cols-2 gap-3 md:grid-cols-4">
             {[
               ["Runs", String(runs.length), "All sessions"],
@@ -178,7 +174,7 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
             ].map(([label, value, hint]) => (
               <div key={label} className="panel px-4 py-3">
                 <div className="kicker">{label}</div>
-                <div className="mt-1 text-[26px] font-semibold tracking-tight">{value}</div>
+                <div className="mt-1 text-[22px] font-medium tracking-tight">{value}</div>
                 <div className="text-[11px] text-faint">{hint}</div>
               </div>
             ))}

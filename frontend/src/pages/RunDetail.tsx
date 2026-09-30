@@ -78,7 +78,7 @@ export default function RunDetail({ id }: { id: string }) {
       <header className="flex flex-wrap items-start justify-between gap-4">
         <div className="min-w-0">
           <a href="#/" className="kicker hover:text-ink">← Sessions</a>
-          <h1 className="mt-2 max-w-4xl text-[22px] font-semibold leading-snug tracking-tight">{run.goal}</h1>
+          <h1 className="page-title mt-2 max-w-4xl leading-snug">{run.goal}</h1>
           <p className="mt-2 flex flex-wrap gap-x-3 gap-y-1 font-mono text-[11px] text-faint">
             <span>{run.id}</span>
             <span>{run.config_name}</span>
@@ -333,7 +333,7 @@ function Metric({ label, value, hint, meter }: { label: string; value: string; h
   return (
     <div className="panel px-4 py-3">
       <div className="kicker">{label}</div>
-      <div className="mt-1 text-[22px] font-semibold tracking-tight">{value}</div>
+      <div className="mt-1 text-[22px] font-medium tracking-tight">{value}</div>
       <div className="text-[11px] text-faint">{hint}</div>
       {typeof meter === "number" && (
         <div className="meter mt-2">

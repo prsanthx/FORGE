@@ -61,7 +61,7 @@ export default function Studio() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="kicker">Harness</div>
-          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Customize</h1>
+          <h1 className="page-title">Customize</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
             Tools, skills, and connectors the execute loop hands the model.
           </p>
@@ -96,7 +96,7 @@ export default function Studio() {
               <div>
                 <div className="kicker">Given to the model</div>
                 <div className="mt-1 flex items-baseline gap-3">
-                  <span className="text-[48px] font-semibold leading-none tracking-tight">{summary.tools_in_prompt}</span>
+                  <span className="text-[48px] font-medium leading-none tracking-tight">{summary.tools_in_prompt}</span>
                   <span className="text-sm text-mute">tools in the prompt</span>
                 </div>
                 <p className="mt-3 max-w-xl text-[13px] leading-6 text-mute">

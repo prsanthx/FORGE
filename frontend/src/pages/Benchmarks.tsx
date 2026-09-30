@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmtRate } from "../format";
-import type { BenchTask, Benchmark, Repo } from "../types";
+import type { BenchTask, Benchmark, ForgeConfig, Repo } from "../types";
 
 const METRICS = [
   ["task_completion", "Completion"],
@@ -11,25 +11,29 @@ const METRICS = [
   ["human_intervention_rate", "Human"],
 ];
 
-const CONFIGS = ["baseline", "planning", "planning_verify", "full_forge"];
-
 export default function Benchmarks() {
   const [repos, setRepos] = useState<Repo[]>([]);
   const [tasks, setTasks] = useState<BenchTask[]>([]);
+  const [configNames, setConfigNames] = useState<string[]>([]);
   const [repoId, setRepoId] = useState("");
   const [pickedTasks, setPickedTasks] = useState<string[]>([]);
-  const [configs, setConfigs] = useState(CONFIGS);
+  const [configs, setConfigs] = useState<string[]>([]);
+  const [history, setHistory] = useState<Benchmark[]>([]);
   const [record, setRecord] = useState<Benchmark | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
-    Promise.all([api.repos(), api.benchTasks(), api.benchmarks()]).then(([repoRows, taskRows, history]) => {
+    Promise.all([api.repos(), api.benchTasks(), api.benchmarks(), api.configs()]).then(([repoRows, taskRows, past, configRows]) => {
+      const names = (configRows as ForgeConfig[]).map((item) => item.name);
       setRepos(repoRows);
       setTasks(taskRows);
+      setConfigNames(names);
+      setConfigs(names);
+      setHistory(past);
       setRepoId(repoRows[0]?.id || "");
       setPickedTasks(taskRows.map((task) => task.id));
-      if (history[0]) api.benchmark(history[0].id).then(setRecord).catch(() => undefined);
+      if (past[0]) api.benchmark(past[0].id).then(setRecord).catch(() => undefined);
     }).catch((err: Error) => setError(err.message));
   }, []);
 
@@ -46,6 +50,7 @@ export default function Benchmarks() {
     try {
       const result = await api.runBenchmark({ repo_id: repoId, configs, task_ids: pickedTasks });
       setRecord(result);
+      setHistory((current) => [result, ...current.filter((item) => item.id !== result.id)]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "benchmark failed");
     } finally {
@@ -75,7 +80,7 @@ export default function Benchmarks() {
           </select>
         </label>
         <div className="mt-3 flex flex-wrap gap-2">
-          {CONFIGS.map((name) => (
+          {configNames.map((name) => (
             <button key={name} className={`chip font-mono ${configs.includes(name) ? "chip-on" : ""}`} onClick={() => toggleConfig(name)}>
               {name}
             </button>
@@ -93,12 +98,27 @@ export default function Benchmarks() {
         </button>
         {error && <p className="mt-2 text-bad">{error}</p>}
       </section>
-      {!record && (
+      {!record && history.length === 0 && (
         <section className="panel px-4 py-10 text-center">
           <div className="text-sm font-medium">No matrix yet</div>
           <p className="mx-auto mt-1 max-w-md text-[13px] leading-6 text-mute">
             Choose configs and tasks, then run the matrix. Scores come from hidden oracles, not a fixture table.
           </p>
+        </section>
+      )}
+      {history.length > 0 && (
+        <section className="panel p-4">
+          <div className="text-[13px] font-medium">History</div>
+          <ul className="mt-2 divide-y divide-line">
+            {history.map((item) => (
+              <li key={item.id}>
+                <button className="flex w-full items-center justify-between py-2 text-left text-[12px]" onClick={() => api.benchmark(item.id).then(setRecord)}>
+                  <span className="font-mono text-mute">{item.id}</span>
+                  <span className="text-faint">{item.status}{item.created_at ? ` · ${item.created_at}` : ""}</span>
+                </button>
+              </li>
+            ))}
+          </ul>
         </section>
       )}
       {record && (
@@ -118,15 +138,22 @@ export default function Benchmarks() {
             </thead>
             <tbody>
               {METRICS.map(([key, label]) => (
-                <tr key={key} className="border-t border-white/8">
+                <tr key={key} className="border-t border-line">
                   <td className="p-2 text-[13px]">{label}</td>
                   {columns.map((column) => {
                     const [difficulty, config] = column.split("|");
                     const cell = cells.find((item) => item.difficulty === difficulty && item.config_name === config);
                     const value = cell ? (cell.metrics[key] as number | null) : null;
+                    const text = fmtRate(value);
                     return (
                       <td key={column} className={`p-2 font-mono ${heat(key, value)}`}>
-                        {fmtRate(value)}
+                        {cell?.run_id ? (
+                          <a className="underline decoration-line underline-offset-2" href={`#/runs/${cell.run_id}`}>
+                            {text}
+                          </a>
+                        ) : (
+                          text
+                        )}
                       </td>
                     );
                   })}

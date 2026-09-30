@@ -20,13 +20,14 @@ function useHash(): string {
 
 export default function App() {
   const hash = useHash();
-  const runMatch = hash.match(/^#\/runs\/([^/?]+)/);
+  const route = hash.split("?")[0] || "#/";
+  const runMatch = route.match(/^#\/runs\/([^/]+)/);
   let page = <Dashboard onOpen={(id) => (window.location.hash = `#/runs/${id}`)} />;
   if (runMatch) page = <RunDetail id={runMatch[1]} />;
-  else if (hash.startsWith("#/studio")) page = <Studio />;
-  else if (hash.startsWith("#/repos")) page = <Repos />;
-  else if (hash.startsWith("#/configs")) page = <Configs />;
-  else if (hash.startsWith("#/benchmarks")) page = <Benchmarks />;
-  else if (hash.startsWith("#/providers")) page = <Providers />;
+  else if (route === "#/studio" || route === "#/customize") page = <Studio />;
+  else if (route === "#/repos") page = <Repos />;
+  else if (route === "#/configs") page = <Configs />;
+  else if (route === "#/benchmarks") page = <Benchmarks />;
+  else if (route === "#/providers" || route === "#/settings") page = <Providers />;
   return <Shell hash={hash}>{page}</Shell>;
 }

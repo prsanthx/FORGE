@@ -38,6 +38,9 @@ export default function Dag({ tasks }: { tasks: Task[] }) {
                   <span>{task.status.replaceAll("_", " ")}</span>
                 </div>
                 <div className="mt-1 text-[13px] leading-5 text-ink">{task.title}</div>
+                {task.dependencies.length > 0 && (
+                  <div className="mt-1 text-[11px] text-mute">after {task.dependencies.join(", ")}</div>
+                )}
                 {task.attempt > 0 && <div className="mt-1 text-[11px] text-mute">attempt {task.attempt}</div>}
               </div>
             ))}

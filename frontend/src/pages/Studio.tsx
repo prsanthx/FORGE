@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
+import Confirm from "../components/Confirm";
 import type { ForgeConfig, McpServer, StudioSnapshot } from "../types";
 
 const EMPTY_SKILL = { name: "", description: "", body: "" };
 const EMPTY_SERVER = { name: "", transport: "stdio", command: "", args: "", url: "" };
+type Tab = "tools" | "skills" | "connectors";
 
 export default function Studio() {
   const [configs, setConfigs] = useState<ForgeConfig[]>([]);
@@ -13,6 +15,8 @@ export default function Studio() {
   const [server, setServer] = useState(EMPTY_SERVER);
   const [error, setError] = useState("");
   const [busy, setBusy] = useState("");
+  const [tab, setTab] = useState<Tab>("tools");
+  const [pending, setPending] = useState<{ title: string; body: string; run: () => Promise<unknown> } | null>(null);
 
   async function reload(name = configName) {
     const [shot, rows] = await Promise.all([api.studio(name), api.configs()]);
@@ -22,9 +26,9 @@ export default function Studio() {
   }
 
   useEffect(() => {
+    const initial = new URLSearchParams(window.location.hash.split("?")[1] || "").get("tab");
+    if (initial === "skills" || initial === "connectors" || initial === "tools") setTab(initial);
     reload("full_forge").catch((err: Error) => setError(err.message));
-    // The first paint always loads the full harness config.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   async function run(label: string, action: () => Promise<unknown>) {
@@ -57,15 +61,16 @@ export default function Studio() {
       <header className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <div className="kicker">Harness</div>
-          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Tools, skills, and servers</h1>
+          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Customize</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
-            This is the inventory the execute loop hands the model, next to planning, verification, and recovery.
+            Tools, skills, and connectors the execute loop hands the model.
           </p>
         </div>
         <label className="text-[11px] text-faint">
           Config
           <select
             className="field mt-1 min-w-[180px]"
+            aria-label="Config"
             value={configName}
             onChange={(event) => {
               const next = event.target.value;
@@ -91,7 +96,7 @@ export default function Studio() {
               <div>
                 <div className="kicker">Given to the model</div>
                 <div className="mt-1 flex items-baseline gap-3">
-                  <span className="text-[52px] font-semibold leading-none tracking-tight">{summary.tools_in_prompt}</span>
+                  <span className="text-[48px] font-semibold leading-none tracking-tight">{summary.tools_in_prompt}</span>
                   <span className="text-sm text-mute">tools in the prompt</span>
                 </div>
                 <p className="mt-3 max-w-xl text-[13px] leading-6 text-mute">
@@ -104,37 +109,45 @@ export default function Studio() {
                 {[
                   ["Workspace", summary.builtin_enabled],
                   ["Finish", summary.finish],
-                  ["MCP", summary.mcp_tools],
+                  ["Connectors", summary.mcp_tools],
                   ["Skills", summary.skills_enabled],
                 ].map(([label, value]) => (
-                  <div key={String(label)} className="rounded-xl border border-white/8 bg-white/[0.03] px-4 py-3">
+                  <div key={String(label)} className="rounded-xl border border-line bg-elevated px-4 py-3">
                     <div className="font-mono text-[20px] font-medium">{value}</div>
                     <div className="mt-1 text-[11px] text-faint">{label}</div>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-white/5">
+            <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-elevated">
               <div className="bg-accent transition-all" style={{ width: share(summary.builtin_enabled) }} />
-              <div className="bg-white/80 transition-all" style={{ width: share(summary.finish) }} />
+              <div className="bg-ink/70 transition-all" style={{ width: share(summary.finish) }} />
               <div className="bg-info transition-all" style={{ width: share(summary.mcp_tools) }} />
             </div>
-            <pre className="mt-4 max-h-72 overflow-auto rounded-xl bg-black/40 p-3 font-mono text-[12px] leading-6 text-ink">
-              {["TOOLS:", ...view.prompt_tools.map((name) => `- ${name}`)].join("\n")}
-            </pre>
+            <pre className="codeblock mt-4 max-h-72">{["TOOLS:", ...view.prompt_tools.map((name) => `- ${name}`)].join("\n")}</pre>
             {error && <p className="mt-3 text-[12px] text-bad">{error}</p>}
           </section>
 
-          <section className="grid items-start gap-4 lg:grid-cols-3">
-            <article className="panel p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[14px] font-medium">Tools</h2>
-                <span className="text-[11px] text-faint">{configName}</span>
-              </div>
-              <p className="mt-1 text-[12px] leading-5 text-mute">Toggles write the selected config. Finish stays on.</p>
-              <ul className="mt-3 space-y-2">
+          <div className="seg" role="tablist" aria-label="Customize">
+            {(
+              [
+                ["tools", "Tools"],
+                ["skills", "Skills"],
+                ["connectors", "Connectors"],
+              ] as const
+            ).map(([key, label]) => (
+              <button key={key} role="tab" aria-selected={tab === key} className={tab === key ? "is-on" : ""} onClick={() => setTab(key)}>
+                {label}
+              </button>
+            ))}
+          </div>
+
+          {tab === "tools" && (
+            <section className="panel p-4">
+              <p className="text-[12px] leading-5 text-mute">Toggles write {configName}. Finish stays on.</p>
+              <ul className="mt-3 grid gap-2 md:grid-cols-2">
                 {view.builtin.map((tool) => (
-                  <li key={tool.name} className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                  <li key={tool.name} className="rounded-xl border border-line bg-sunken px-3 py-2.5">
                     <div className="flex items-center justify-between gap-2">
                       <div className="min-w-0">
                         <div className="font-mono text-[12px]">{tool.name}</div>
@@ -152,17 +165,15 @@ export default function Studio() {
                   </li>
                 ))}
               </ul>
-            </article>
+            </section>
+          )}
 
-            <article className="panel p-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-[14px] font-medium">Skills</h2>
-                <span className="text-[11px] text-faint">{summary.skills_enabled} enabled</span>
-              </div>
-              <p className="mt-1 text-[12px] leading-5 text-mute">Enabled skills are appended to the execute prompt.</p>
+          {tab === "skills" && (
+            <section className="panel p-4">
+              <p className="text-[12px] leading-5 text-mute">{summary.skills_enabled} enabled. Enabled skills are appended to the execute prompt.</p>
               <ul className="mt-3 space-y-2">
                 {view.skills.map((item) => (
-                  <li key={item.id} className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
+                  <li key={item.id} className="rounded-xl border border-line bg-sunken px-3 py-2.5">
                     <div className="flex items-start justify-between gap-2">
                       <div>
                         <div className="font-mono text-[12px]">{item.name}</div>
@@ -176,14 +187,23 @@ export default function Studio() {
                       </button>
                     </div>
                     <p className="mt-1.5 text-[12px] leading-5 text-faint">{item.body}</p>
-                    <button className="btn-ghost mt-2 px-2 py-1 text-[11px]" onClick={() => run(item.id, () => api.deleteSkill(item.id))}>
+                    <button
+                      className="btn-ghost mt-2 px-2 py-1 text-[11px]"
+                      onClick={() =>
+                        setPending({
+                          title: `Remove ${item.name}?`,
+                          body: "The skill leaves the execute prompt. You can add it again later.",
+                          run: () => api.deleteSkill(item.id),
+                        })
+                      }
+                    >
                       Remove
                     </button>
                   </li>
                 ))}
               </ul>
               <form
-                className="mt-3 space-y-2 border-t border-white/8 pt-3"
+                className="mt-3 space-y-2 border-t border-line pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
                   run("skill", async () => {
@@ -192,44 +212,28 @@ export default function Studio() {
                   });
                 }}
               >
-                <input
-                  className="field"
-                  placeholder="skill_name"
-                  value={skill.name}
-                  onChange={(event) => setSkill({ ...skill, name: event.target.value })}
-                />
-                <input
-                  className="field"
-                  placeholder="Short description"
-                  value={skill.description}
-                  onChange={(event) => setSkill({ ...skill, description: event.target.value })}
-                />
-                <textarea
-                  className="field min-h-[72px]"
-                  placeholder="Instruction the model should follow"
-                  value={skill.body}
-                  onChange={(event) => setSkill({ ...skill, body: event.target.value })}
-                />
+                <input className="field" placeholder="skill_name" aria-label="Skill name" value={skill.name} onChange={(event) => setSkill({ ...skill, name: event.target.value })} />
+                <input className="field" placeholder="Short description" aria-label="Skill description" value={skill.description} onChange={(event) => setSkill({ ...skill, description: event.target.value })} />
+                <textarea className="field min-h-[72px]" placeholder="Instruction the model should follow" aria-label="Skill instruction" value={skill.body} onChange={(event) => setSkill({ ...skill, body: event.target.value })} />
                 <button className="btn" disabled={busy === "skill" || !skill.name.trim() || !skill.body.trim()}>
                   Add skill
                 </button>
               </form>
-            </article>
+            </section>
+          )}
 
-            <article className="panel p-4">
+          {tab === "connectors" && (
+            <section className="panel p-4">
               <div className="flex items-center justify-between gap-2">
-                <h2 className="text-[14px] font-medium">MCP servers</h2>
-                <button className="btn-primary px-3 py-1.5 text-[12px]" disabled={busy === "demo"} onClick={() => run("demo", () => api.demoMcp())}>
+                <p className="text-[12px] leading-5 text-mute">Probe a stdio or HTTP server. Connected tools join the model allow-list.</p>
+                <button className="btn-primary shrink-0 px-3 py-1.5 text-[12px]" disabled={busy === "demo"} onClick={() => run("demo", () => api.demoMcp())}>
                   {busy === "demo" ? "Connecting" : "Use local demo"}
                 </button>
               </div>
-              <p className="mt-1 text-[12px] leading-5 text-mute">
-                Probe a stdio or HTTP server. Connected tools are added to the model allow-list.
-              </p>
               <ul className="mt-3 space-y-2">
                 {view.mcp.length === 0 && (
-                  <li className="rounded-xl border border-dashed border-white/10 px-3 py-6 text-center text-[12px] text-faint">
-                    No servers yet. Start with the local demo.
+                  <li className="rounded-xl border border-dashed border-line px-3 py-6 text-center text-[12px] text-faint">
+                    No connectors yet. Start with the local demo.
                   </li>
                 )}
                 {view.mcp.map((item) => (
@@ -239,12 +243,18 @@ export default function Studio() {
                     busy={busy}
                     onProbe={() => run(item.id, () => api.probeMcp(item.id))}
                     onToggle={() => run(item.id, () => api.updateMcp(item.id, { enabled: !item.enabled }))}
-                    onRemove={() => run(item.id, () => api.deleteMcp(item.id))}
+                    onRemove={() =>
+                      setPending({
+                        title: `Remove ${item.name}?`,
+                        body: "Discovered tools leave the model prompt.",
+                        run: () => api.deleteMcp(item.id),
+                      })
+                    }
                   />
                 ))}
               </ul>
               <form
-                className="mt-3 space-y-2 border-t border-white/8 pt-3"
+                className="mt-3 space-y-2 border-t border-line pt-3"
                 onSubmit={(event) => {
                   event.preventDefault();
                   run("mcp", async () => {
@@ -260,50 +270,39 @@ export default function Studio() {
                   });
                 }}
               >
-                <input
-                  className="field"
-                  placeholder="server_name"
-                  value={server.name}
-                  onChange={(event) => setServer({ ...server, name: event.target.value })}
-                />
-                <select
-                  className="field"
-                  value={server.transport}
-                  onChange={(event) => setServer({ ...server, transport: event.target.value })}
-                >
+                <input className="field" placeholder="server_name" aria-label="Server name" value={server.name} onChange={(event) => setServer({ ...server, name: event.target.value })} />
+                <select className="field" aria-label="Transport" value={server.transport} onChange={(event) => setServer({ ...server, transport: event.target.value })}>
                   <option value="stdio">stdio</option>
                   <option value="http">http</option>
                 </select>
                 {server.transport === "stdio" ? (
                   <>
-                    <input
-                      className="field"
-                      placeholder="Command, e.g. python"
-                      value={server.command}
-                      onChange={(event) => setServer({ ...server, command: event.target.value })}
-                    />
-                    <input
-                      className="field"
-                      placeholder="Args, e.g. -m forge.mcp_demo"
-                      value={server.args}
-                      onChange={(event) => setServer({ ...server, args: event.target.value })}
-                    />
+                    <input className="field" placeholder="Command, e.g. python" aria-label="Command" value={server.command} onChange={(event) => setServer({ ...server, command: event.target.value })} />
+                    <input className="field" placeholder="Args, e.g. -m forge.mcp_demo" aria-label="Arguments" value={server.args} onChange={(event) => setServer({ ...server, args: event.target.value })} />
                   </>
                 ) : (
-                  <input
-                    className="field"
-                    placeholder="https://example.com/mcp"
-                    value={server.url}
-                    onChange={(event) => setServer({ ...server, url: event.target.value })}
-                  />
+                  <input className="field" placeholder="https://example.com/mcp" aria-label="Server URL" value={server.url} onChange={(event) => setServer({ ...server, url: event.target.value })} />
                 )}
                 <button className="btn" disabled={busy === "mcp" || !server.name.trim()}>
                   Add server
                 </button>
               </form>
-            </article>
-          </section>
+            </section>
+          )}
         </>
+      )}
+
+      {pending && (
+        <Confirm
+          title={pending.title}
+          body={pending.body}
+          onCancel={() => setPending(null)}
+          onConfirm={() => {
+            const action = pending.run;
+            setPending(null);
+            run("remove", action);
+          }}
+        />
       )}
     </div>
   );
@@ -325,18 +324,14 @@ function ServerCard({
   const tone = server.status === "connected" ? "text-ok" : server.status === "failed" ? "text-bad" : "text-faint";
   const endpoint = server.transport === "http" ? server.url : [server.command, ...(server.args || [])].filter(Boolean).join(" ");
   return (
-    <li className="rounded-xl border border-white/8 bg-white/[0.02] px-3 py-2.5">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className={`status-dot ${tone}`} />
-            <span className="font-mono text-[12px]">{server.name}</span>
-          </div>
-          <div className="mt-1 truncate font-mono text-[11px] text-faint">
-            {server.transport} · {server.status}
-            {endpoint ? ` · ${endpoint}` : ""}
-          </div>
-        </div>
+    <li className="rounded-xl border border-line bg-sunken px-3 py-2.5">
+      <div className="flex items-center gap-2">
+        <span className={`status-dot ${tone}`} />
+        <span className="font-mono text-[12px]">{server.name}</span>
+      </div>
+      <div className="mt-1 truncate font-mono text-[11px] text-faint">
+        {server.transport} · {server.status}
+        {endpoint ? ` · ${endpoint}` : ""}
       </div>
       {server.error && <p className="mt-1.5 text-[12px] leading-5 text-bad">{server.error}</p>}
       {server.tools.length > 0 && (

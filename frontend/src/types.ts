@@ -95,7 +95,15 @@ export type Run = {
   tasks?: Task[];
   llm_calls?: LlmCall[];
   tool_calls?: ToolCall[];
-  failures?: { task_key: string; failure_class: string; strategy: string; attempt: number; resolved: number }[];
+  failures?: {
+    task_key: string;
+    failure_class: string;
+    strategy: string;
+    attempt: number;
+    resolved: number;
+    evidence?: string;
+    risk?: number;
+  }[];
 };
 
 export type RunEvent = {

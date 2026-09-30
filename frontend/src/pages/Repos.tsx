@@ -68,7 +68,7 @@ export default function Repos() {
     <div className="stagger space-y-6">
       <header>
         <div className="kicker">Knowledge graph</div>
-        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Connect a codebase</h1>
+        <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Repositories</h1>
         <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
           Local folders and GitHub repositories. Indexing builds the file, symbol, module, dependency, and test graph the model queries when the prompt is full.
         </p>
@@ -76,11 +76,12 @@ export default function Repos() {
 
       <section className="grid gap-4 lg:grid-cols-[0.9fr_1.1fr]">
         <div className="composer p-4">
-          <div className="flex gap-1 rounded-lg bg-black/30 p-1 text-[12px]">
+          <div className="seg w-full">
             {["local", "github"].map((item) => (
               <button
                 key={item}
-                className={`flex-1 rounded-md px-3 py-1.5 capitalize transition ${source === item ? "bg-white/10 text-ink" : "text-mute"}`}
+                className="flex-1 capitalize"
+                aria-pressed={source === item}
                 onClick={() => setSource(item)}
               >
                 {item}
@@ -109,7 +110,7 @@ export default function Repos() {
 
         <div className="space-y-2">
           {repos.length === 0 && (
-            <div className="panel px-4 py-8 text-center text-sm text-mute">No repositories yet.</div>
+            <div className="panel px-4 py-8 text-center text-sm text-mute">Connect a local folder or a GitHub repository.</div>
           )}
           {repos.map((repo) => (
             <article key={repo.id} className={`panel panel-hover p-4 ${active === repo.id ? "border-accent/40" : ""}`}>
@@ -130,6 +131,7 @@ export default function Repos() {
               </div>
             </article>
           ))}
+          <p className="px-1 text-[11px] text-faint">Removing a repository is not available from this screen.</p>
         </div>
       </section>
 
@@ -148,14 +150,14 @@ export default function Repos() {
           {selected.kg_stats?.kinds && (
             <div className="mt-4 grid grid-cols-2 gap-2 sm:grid-cols-5">
               {Object.entries(selected.kg_stats.kinds).map(([kind, count]) => (
-                <div key={kind} className="rounded-lg bg-white/[0.03] px-3 py-2">
+                <div key={kind} className="rounded-lg bg-elevated px-3 py-2">
                   <div className="text-[11px] capitalize text-faint">{kind}</div>
                   <div className="text-lg font-semibold">{count}</div>
                 </div>
               ))}
             </div>
           )}
-          <pre className="mt-4 max-h-72 overflow-auto rounded-lg bg-black/40 p-3 font-mono text-[11px] leading-5 text-mute">{pack || "Ask the graph for a symbol, file, or behavior."}</pre>
+          <pre className="codeblock mt-4 max-h-72 text-[11px]">{pack || "Ask the graph for a symbol, file, or behavior."}</pre>
         </section>
       )}
     </div>

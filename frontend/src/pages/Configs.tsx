@@ -33,12 +33,16 @@ export default function Configs() {
   }
 
   async function updateNumber(config: ForgeConfig, field: "max_retries" | "risk_threshold", value: number) {
+    if (!Number.isFinite(value)) return;
+    const current = config.recovery?.[field];
+    if (current === value) return;
     const next: ForgeConfig = {
       ...config,
       recovery: { ...(config.recovery || {}), [field]: value },
     };
     const saved = await api.saveConfig(config.name, next);
-    setConfigs((current) => current.map((item) => (item.name === saved.name ? saved : item)));
+    setConfigs((rows) => rows.map((item) => (item.name === saved.name ? saved : item)));
+    setMessage(`Saved ${saved.name}`);
   }
 
   return (
@@ -46,7 +50,7 @@ export default function Configs() {
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <div className="kicker">Control surface</div>
-          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Ablation configs</h1>
+          <h1 className="mt-1 text-[26px] font-semibold tracking-tight">Configs</h1>
           <p className="mt-2 max-w-2xl text-[13px] leading-6 text-mute">
             Baseline through full FORGE. Toggles write back to the YAML files the harness reads.
           </p>
@@ -73,40 +77,69 @@ export default function Configs() {
                   const on = Boolean(config.features?.[key]);
                   return (
                     <button key={key} className={`chip ${on ? "chip-on" : ""}`} onClick={() => toggle(config, key)}>
-                      <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${on ? "bg-accent" : "bg-white/20"}`} />
+                      <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${on ? "bg-accent" : "bg-line"}`} />
                       {label}
                     </button>
                   );
                 })}
               </div>
               <div className="mt-4 grid grid-cols-2 gap-3 text-sm">
-                <label>
-                  <span className="kicker">Max retries</span>
-                  <input
-                    type="number"
-                    min={0}
-                    className="field mt-1"
-                    value={config.recovery?.max_retries ?? 0}
-                    onChange={(event) => updateNumber(config, "max_retries", Number(event.target.value))}
-                  />
-                </label>
-                <label>
-                  <span className="kicker">Ask-human risk</span>
-                  <input
-                    type="number"
-                    min={0}
-                    max={1}
-                    step={0.01}
-                    className="field mt-1"
-                    value={config.recovery?.risk_threshold ?? 1}
-                    onChange={(event) => updateNumber(config, "risk_threshold", Number(event.target.value))}
-                  />
-                </label>
+                <NumberField
+                  label="Max retries"
+                  value={config.recovery?.max_retries ?? 0}
+                  min={0}
+                  onCommit={(value) => updateNumber(config, "max_retries", value)}
+                />
+                <NumberField
+                  label="Ask-human risk"
+                  value={config.recovery?.risk_threshold ?? 1}
+                  min={0}
+                  max={1}
+                  step={0.01}
+                  onCommit={(value) => updateNumber(config, "risk_threshold", value)}
+                />
               </div>
             </article>
           );
         })}
       </div>
     </div>
+  );
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  min?: number;
+  max?: number;
+  step?: number;
+  onCommit: (value: number) => void;
+}) {
+  const [text, setText] = useState(String(value));
+  useEffect(() => setText(String(value)), [value]);
+  return (
+    <label>
+      <span className="kicker">{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        className="field mt-1"
+        value={text}
+        onChange={(event) => setText(event.target.value)}
+        onBlur={() => onCommit(Number(text))}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") (event.target as HTMLInputElement).blur();
+        }}
+      />
+    </label>
   );
 }

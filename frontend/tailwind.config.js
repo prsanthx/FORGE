@@ -1,27 +1,33 @@
 /** @type {import('tailwindcss').Config} */
+const channel = (name) => `rgb(var(--${name}) / <alpha-value>)`;
+
 export default {
   content: ["./index.html", "./src/**/*.{ts,tsx}"],
   theme: {
     extend: {
       colors: {
-        ink: "#f4f4f5",
-        mute: "#a1a1aa",
-        faint: "#71717a",
-        accent: "#8ab4ff",
-        ok: "#4ade80",
-        bad: "#f87171",
-        info: "#7dd3fc",
-        panel: "#121214",
-        elevated: "#18181b",
-        line: "#2a2a2e",
+        ink: channel("ink"),
+        mute: channel("mute"),
+        faint: channel("faint"),
+        accent: channel("accent"),
+        ok: channel("ok"),
+        bad: channel("bad"),
+        info: channel("info"),
+        panel: channel("panel"),
+        elevated: channel("elevated"),
+        line: channel("line"),
+        sunken: channel("sunken"),
+        canvas: channel("canvas"),
+        sidebar: channel("sidebar"),
+        onaccent: channel("onaccent"),
       },
       fontFamily: {
         sans: ["Inter", "ui-sans-serif", "system-ui", "Segoe UI", "Helvetica Neue", "sans-serif"],
         mono: ["JetBrains Mono", "ui-monospace", "SFMono-Regular", "Menlo", "monospace"],
       },
       boxShadow: {
-        lift: "0 18px 50px -28px rgba(0,0,0,0.85)",
-        ring: "0 0 0 4px rgba(138,180,255,0.12)",
+        lift: "0 12px 32px -24px rgb(var(--shadow) / 0.45)",
+        ring: "0 0 0 3px rgb(var(--accent) / 0.18)",
       },
     },
   },

@@ -28,7 +28,7 @@ export function statusTone(status: string): string {
   if (status === "completed_with_failures") return "text-accent border-accent/30 bg-accent/10";
   if (status === "awaiting_human") return "text-info border-info/30 bg-info/10";
   if (status === "running" || status === "planning" || status === "queued") return "text-accent border-accent/40 bg-accent/10";
-  return "text-mute border-white/10 bg-white/[0.04]";
+  return "text-mute border-line bg-elevated";
 }
 
 export function fmtWhen(iso?: string | null): string {

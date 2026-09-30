@@ -46,7 +46,8 @@
 html,
 body,
 #root {
-  min-height: 100vh;
+  height: 100%;
+  overflow: hidden;
 }
 
 body {
@@ -193,8 +194,9 @@ body {
 .app-frame {
   display: grid;
   grid-template-columns: 260px minmax(0, 1fr);
-  height: 100vh;
-  height: 100dvh;
+  grid-template-rows: minmax(0, 1fr);
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   background: rgb(var(--canvas));
 }
@@ -204,6 +206,9 @@ body {
 .side {
   display: flex;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
   flex-direction: column;
   overflow: hidden;
   border-right: 0.5px solid rgb(var(--line));
@@ -214,14 +219,20 @@ body {
   padding: 10px 6px;
 }
 .side-scroll {
+  flex: 1 1 0;
   min-height: 0;
-  flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 .center {
   display: flex;
   min-width: 0;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
   flex-direction: column;
+  overflow: hidden;
   background: rgb(var(--canvas));
 }
 .center-bar {
@@ -235,9 +246,11 @@ body {
   padding: 0 16px;
 }
 .center-body {
+  flex: 1 1 0;
   min-height: 0;
-  flex: 1;
-  overflow: auto;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   padding: 20px 24px 28px;
 }
 .new-session {
@@ -330,8 +343,12 @@ body {
 }
 .side-foot {
   flex: none;
-  margin-top: 8px;
+  margin-top: auto;
+  position: sticky;
+  bottom: 0;
+  z-index: 2;
   border-top: 0.5px solid rgb(var(--line));
+  background: rgb(var(--sidebar));
   padding-top: 8px;
 }
 .drawer-back {
@@ -371,6 +388,16 @@ body {
 .app-frame[data-collapsed="true"] .side-foot {
   border-top: 0;
   padding-top: 0;
+}
+
+@media (max-height: 640px) {
+  .side {
+    overflow-y: auto;
+  }
+  .side-scroll {
+    flex: none;
+    overflow: visible;
+  }
 }
 
 @media (max-width: 767px) {

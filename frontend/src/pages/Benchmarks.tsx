@@ -1,7 +1,15 @@
 import { useEffect, useState } from "react";
 import { api } from "../api";
 import { fmtRate } from "../format";
-import type { BenchTask, Benchmark, ForgeConfig, Repo } from "../types";
+import type { BenchTask, Benchmark, ContextPolicy, ForgeConfig, Repo } from "../types";
+
+const TECHNIQUES: [keyof ContextPolicy, string][] = [
+  ["spill", "Spill"],
+  ["dedupe_reads", "Dedupe"],
+  ["mask_old", "Mask"],
+  ["agents_md", "AGENTS.md"],
+  ["prompt_cache", "Cache"],
+];
 
 const METRICS = [
   ["task_completion", "Completion"],
@@ -22,6 +30,13 @@ export default function Benchmarks() {
   const [record, setRecord] = useState<Benchmark | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [policy, setPolicy] = useState<ContextPolicy>({
+    spill: true,
+    dedupe_reads: true,
+    mask_old: true,
+    agents_md: true,
+    prompt_cache: true,
+  });
 
   useEffect(() => {
     Promise.all([api.repos(), api.benchTasks(), api.benchmarks(), api.configs()]).then(([repoRows, taskRows, past, configRows]) => {
@@ -48,7 +63,7 @@ export default function Benchmarks() {
     setBusy(true);
     setError("");
     try {
-      const result = await api.runBenchmark({ repo_id: repoId, configs, task_ids: pickedTasks });
+      const result = await api.runBenchmark({ repo_id: repoId, configs, task_ids: pickedTasks, context_policy: policy });
       setRecord(result);
       setHistory((current) => [result, ...current.filter((item) => item.id !== result.id)]);
     } catch (err) {
@@ -83,6 +98,20 @@ export default function Benchmarks() {
           {configNames.map((name) => (
             <button key={name} className={`chip font-mono ${configs.includes(name) ? "chip-on" : ""}`} onClick={() => toggleConfig(name)}>
               {name}
+            </button>
+          ))}
+        </div>
+        <p className="mt-3 text-[12px] leading-5 text-faint">
+          One policy is applied to every variant in the sweep. Turn a technique off to measure what it is worth. This does not rewrite the config files.
+        </p>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {TECHNIQUES.map(([key, label]) => (
+            <button
+              key={key}
+              className={`chip ${policy[key] ? "chip-on" : ""}`}
+              onClick={() => setPolicy((current) => ({ ...current, [key]: !current[key] }))}
+            >
+              {label}
             </button>
           ))}
         </div>

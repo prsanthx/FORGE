@@ -9,9 +9,19 @@ from pathlib import Path
 from typing import Any
 
 from forge.core import checkpoints
-from forge.core.executor import execute_task
+from forge.core.context import ContextSession, load_agent_docs, resolve_policy
+from forge.core.executor import EXECUTE_SYSTEM, execute_task
 from forge.core.planner import create_plan
 from forge.core.recovery import decide_strategy
+from forge.core.sandbox import (
+    DockerRunner,
+    LocalRunner,
+    SandboxError,
+    docker_ready,
+    ensure_sandbox_image,
+    reset_runner,
+    use_runner,
+)
 from forge.core.verifier import verify_task
 from forge.db import Database
 from forge.events import EventBus
@@ -36,6 +46,8 @@ class ForgeService:
         self._resume: dict[str, asyncio.Event] = {}
         self._notes: dict[str, str] = {}
         self._interactive: dict[str, bool] = {}
+        self._ledger: ContextSession | None = None
+        self._runner_token = None
 
     # --- repos ---
     def connect_local(self, path: str, name: str | None = None) -> dict[str, Any]:
@@ -104,9 +116,14 @@ class ForgeService:
         goal: str,
         llm_override: dict[str, Any] | None = None,
         interactive: bool = True,
+        sandbox: str = "repo",
+        context_policy: dict[str, Any] | None = None,
+        base_rev: str | None = None,
     ) -> dict[str, Any]:
         if not self.db.get_repo_raw(repo_id):
             raise KeyError(repo_id)
+        if sandbox not in {"repo", "docker"}:
+            raise ValueError("sandbox must be repo or docker")
         load_config(config_name)
         run_id = new_id("run")
         self._interactive[run_id] = interactive
@@ -121,7 +138,11 @@ class ForgeService:
                 "branch": "",
                 "started_at": utc_now(),
                 "ended_at": None,
-                "metrics": {},
+                "metrics": {
+                    "sandbox": sandbox,
+                    "context_policy_override": context_policy or {},
+                    "base_rev": base_rev or "",
+                },
                 "error": "",
                 "human_question": "",
                 "plan": {},
@@ -144,6 +165,11 @@ class ForgeService:
         except Exception as exc:  # noqa: BLE001 — surface harness crashes on the run
             self.db.update_run(run_id, status="failed", error=str(exc), ended_at=utc_now())
             self._emit(run_id, "status", f"run failed: {exc}", status="failed")
+        finally:
+            if self._runner_token is not None:
+                reset_runner(self._runner_token)
+                self._runner_token = None
+            self._ledger = None
         return self.db.get_run(run_id)
 
     async def _execute(self, run_id: str) -> None:
@@ -151,10 +177,32 @@ class ForgeService:
         if not run:
             raise KeyError(run_id)
         cfg = load_config(run["config_name"])
+        stored = run.get("metrics") or {}
+        sandbox = stored.get("sandbox") or "repo"
+        policy = resolve_policy(cfg, stored.get("context_policy_override") or None)
+        cfg = {**cfg, "context": policy}
         repo = self.db.get_repo_raw(run["repo_id"])
-        workspace = self._make_workspace(Path(repo["path"]), run_id)
-        self.db.update_run(run_id, workspace=str(workspace), status="planning")
-        self._emit(run_id, "status", "preparing workspace", status="planning", workspace=str(workspace))
+        source = Path(repo["path"])
+        if sandbox == "docker":
+            ready, detail = docker_ready()
+            if not ready:
+                raise SandboxError(detail)
+            ensure_sandbox_image()
+            runner = DockerRunner()
+        else:
+            runner = LocalRunner()
+        self._runner_token = use_runner(runner)
+        workspace = self._prepare_workspace(source, run_id, sandbox)
+        from forge.settings import DATA_DIR
+
+        session = ContextSession(DATA_DIR / "spills" / run_id, policy, sandbox=sandbox)
+        guide, agents = load_agent_docs(workspace)
+        session.agents_files = agents
+        session.bind_system(EXECUTE_SYSTEM, guide)
+        self._ledger = session
+        self.db.update_run(run_id, workspace=str(workspace), status="planning", metrics={"sandbox": sandbox, "context": session.report(), "base_rev": stored.get("base_rev") or ""})
+        where = "docker sandbox" if sandbox == "docker" else "connected repo"
+        self._emit(run_id, "status", f"preparing {where}", status="planning", workspace=str(workspace), sandbox=sandbox)
 
         llm = build_provider(cfg, run.get("llm") or {})
         retriever = None
@@ -163,12 +211,11 @@ class ForgeService:
                 self.index(run["repo_id"])
             retriever = GraphRetriever(self.db, run["repo_id"])
         original_tests = _original_tests(workspace)
-        branch = ""
-        if flag(cfg, "git_checkpoints"):
-            branch = checkpoints.start_branch(workspace, run_id)
-            checkpoints.mark_base(workspace)
-            self.db.update_run(run_id, branch=branch)
-            self._emit(run_id, "log", f"git branch {branch}", branch=branch)
+        base = (stored.get("base_rev") or "") or None
+        branch = checkpoints.start_branch(workspace, run_id, base=base)
+        checkpoints.mark_base(workspace, run_id)
+        self.db.update_run(run_id, branch=branch)
+        self._emit(run_id, "log", f"git branch {branch} in {workspace}", branch=branch, workspace=str(workspace))
 
         summary = retriever.summary() if retriever else ""
         hints = retriever.file_hints() if retriever else []
@@ -211,6 +258,7 @@ class ForgeService:
                 verify_on=verify_on,
                 recovery_on=recovery_on,
                 replans=replans,
+                session=session,
             )
             replans = outcome["replans"]
             checks_passed += outcome["checks_passed"]
@@ -228,7 +276,9 @@ class ForgeService:
             status = "completed_with_failures"
         else:
             status = "completed"
-        metrics = self._metrics(run_id, checks_passed, checks_total, asked)
+        if branch:
+            checkpoints.commit_if_dirty(workspace, f"forge: {run_id}")
+        metrics = self._metrics(run_id, checks_passed, checks_total, asked, session)
         self.db.update_run(run_id, status=status, ended_at=utc_now(), metrics=metrics, branch=branch)
         self._emit(run_id, "status", f"run {status}", status=status, metrics=metrics)
 
@@ -245,6 +295,7 @@ class ForgeService:
         verify_on: bool,
         recovery_on: bool,
         replans: int,
+        session: ContextSession,
     ) -> dict[str, Any]:
         recovery_cfg = cfg.get("recovery") or {}
         max_retries = int(recovery_cfg.get("max_retries") or 0)
@@ -278,6 +329,8 @@ class ForgeService:
                         "tokens_in": response.prompt_tokens,
                         "tokens_out": response.completion_tokens,
                         "latency_ms": int(response.latency_ms),
+                        "cache_read_tokens": getattr(response, "cache_read_tokens", 0),
+                        "cache_write_tokens": getattr(response, "cache_write_tokens", 0),
                     },
                 )
 
@@ -318,6 +371,7 @@ class ForgeService:
                 skill_block=skill_block,
                 extra_tools=extra_tools,
                 mcp_call=lambda name, args: call_mcp_tool(self.db, name, args),
+                session=session,
             )
             elapsed_ms = int((asyncio.get_event_loop().time() - started) * 1000)
             if not verify_on:
@@ -526,6 +580,10 @@ class ForgeService:
                 "created_at": utc_now(),
             }
         )
+        if self._ledger is not None:
+            self._ledger.cache_read += int(info.get("cache_read_tokens") or 0)
+            self._ledger.cache_write += int(info.get("cache_write_tokens") or 0)
+            self._ledger.prompt_tokens += int(info.get("tokens_in") or 0)
         self._emit(
             run_id,
             "llm",
@@ -536,7 +594,14 @@ class ForgeService:
             latency_ms=info.get("latency_ms"),
         )
 
-    def _metrics(self, run_id: str, checks_passed: int, checks_total: int, asked: bool) -> dict[str, Any]:
+    def _metrics(
+        self,
+        run_id: str,
+        checks_passed: int,
+        checks_total: int,
+        asked: bool,
+        session: ContextSession | None = None,
+    ) -> dict[str, Any]:
         run = self.db.get_run(run_id)
         tokens_in = sum(int(call.get("tokens_in") or 0) for call in run["llm_calls"])
         tokens_out = sum(int(call.get("tokens_out") or 0) for call in run["llm_calls"])
@@ -562,7 +627,27 @@ class ForgeService:
             "checks_total": checks_total,
             "failures": len(failures),
             "failures_resolved": resolved,
+            "sandbox": session.sandbox if session else "repo",
+            "context": session.report() if session else {},
         }
+
+    def diff(self, run_id: str) -> dict[str, Any]:
+        run = self.db.get_run(run_id)
+        if not run:
+            raise KeyError(run_id)
+        workspace = Path(run.get("workspace") or "")
+        if not workspace.exists():
+            return {"files": [], "patch": "", "stat": "", "error": "workspace is missing"}
+        report = checkpoints.unified_diff(workspace, run_id)
+        report["branch"] = run.get("branch") or ""
+        report["workspace"] = str(workspace)
+        report["sandbox"] = (run.get("metrics") or {}).get("sandbox") or "repo"
+        return report
+
+    def _prepare_workspace(self, source: Path, run_id: str, sandbox: str) -> Path:
+        if sandbox == "docker":
+            return self._make_workspace(source, run_id)
+        return source
 
     def _make_workspace(self, source: Path, run_id: str) -> Path:
         from forge.settings import DATA_DIR
@@ -576,8 +661,6 @@ class ForgeService:
             dest,
             ignore=shutil.ignore_patterns(".git", "__pycache__", ".pytest_cache", "*.pyc", ".venv"),
         )
-        # Keep pytest from walking up into the FORGE backend config.
-        (dest / "pytest.ini").write_text("[pytest]\naddopts = -q\n")
         return dest
 
     def _emit(self, run_id: str, kind: str, message: str, **data: Any) -> None:

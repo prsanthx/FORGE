@@ -26,6 +26,7 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
   const [ready, setReady] = useState(false);
   const [inventory, setInventory] = useState<StudioSummary | null>(null);
   const [query, setQuery] = useState("");
+  const [sandbox, setSandbox] = useState<"repo" | "docker">("repo");
 
   async function refresh() {
     const [repoRows, configRows, runRows] = await Promise.all([api.repos(), api.configs(), api.runs()]);
@@ -61,7 +62,7 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
     setBusy(true);
     setError("");
     try {
-      const run = await api.createRun({ repo_id: repoId, config, goal });
+      const run = await api.createRun({ repo_id: repoId, config, goal, sandbox });
       onOpen(run.id);
     } catch (err) {
       setError(err instanceof Error ? err.message : "could not start run");
@@ -129,6 +130,14 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
               <button className="btn-ghost" onClick={() => setGoal(SAMPLE)}>
                 Sample goal
               </button>
+              <div className="seg" role="group" aria-label="Where the run edits">
+                <button type="button" aria-pressed={sandbox === "repo"} onClick={() => setSandbox("repo")}>
+                  This repo
+                </button>
+                <button type="button" aria-pressed={sandbox === "docker"} onClick={() => setSandbox("docker")}>
+                  Docker sandbox
+                </button>
+              </div>
               <div className="ml-auto flex items-center gap-3">
                 {error && <span className="text-[12px] text-bad">{error}</span>}
                 <button className="btn-primary px-4" disabled={busy || !repoId || !goal.trim()} onClick={launch}>
@@ -158,6 +167,11 @@ export default function Dashboard({ onOpen }: { onOpen: (id: string) => void }) 
                 {selected?.llm?.provider || "mock"} / {selected?.llm?.model || "mock-small"}
               </span>
             </div>
+            <p className="mt-2 px-0.5 text-[12px] leading-5 text-faint">
+              {sandbox === "repo"
+                ? "Edits land on a new branch in the folder you connected. Git is initialized when that folder is not a repository. pip install stays blocked; checks use the project on PYTHONPATH."
+                : "The folder you connected stays as it is. The run copies it into a container with no network, and the diff is shown on the run."}
+            </p>
           </section>
         </>
       )}

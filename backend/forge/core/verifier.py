@@ -9,11 +9,11 @@ from __future__ import annotations
 import py_compile
 import re
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
 from forge.core.recovery import classify_failure
+from forge.core.sandbox import SandboxError, current_runner, pytest_args
 from forge.util import extract_json
 
 DIAGNOSE_SYSTEM = """PHASE: DIAGNOSE
@@ -42,27 +42,10 @@ SECURITY_RES = [
 
 
 def _pytest(workspace: Path, extra: list[str]) -> tuple[bool, str]:
-    cmd = [
-        sys.executable,
-        "-m",
-        "pytest",
-        "-q",
-        "--tb=line",
-        "--noconftest",
-        *extra,
-    ]
-    env = dict(**__import__("os").environ)
-    env["PYTHONPATH"] = str(workspace)
-    env.pop("PYTEST_ADDOPTS", None)
-    proc = subprocess.run(
-        cmd,
-        cwd=workspace,
-        text=True,
-        capture_output=True,
-        timeout=90,
-        check=False,
-        env=env,
-    )
+    try:
+        proc = current_runner().run(pytest_args(workspace, extra), cwd=workspace, timeout=90)
+    except (SandboxError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
     output = ((proc.stdout or "") + "\n" + (proc.stderr or "")).strip()
     return proc.returncode == 0, output[-4000:]
 
@@ -98,15 +81,14 @@ def check_unit(workspace: Path) -> tuple[bool, str]:
 def check_integration(workspace: Path) -> tuple[bool, str]:
     if not (workspace / "todo" / "store.py").exists():
         return True, "no todo package; integration smoke skipped"
-    proc = subprocess.run(
-        [sys.executable, "-c", "from todo.store import TodoStore; TodoStore().add('smoke')"],
-        cwd=workspace,
-        text=True,
-        capture_output=True,
-        timeout=20,
-        check=False,
-        env={**__import__("os").environ, "PYTHONPATH": str(workspace)},
-    )
+    try:
+        proc = current_runner().run(
+            [__import__("sys").executable, "-c", "from todo.store import TodoStore; TodoStore().add('smoke')"],
+            cwd=workspace,
+            timeout=20,
+        )
+    except (SandboxError, subprocess.TimeoutExpired) as exc:
+        return False, str(exc)
     output = ((proc.stdout or "") + (proc.stderr or "")).strip()
     if proc.returncode != 0:
         return False, output[:2000] or f"import smoke failed ({proc.returncode})"
@@ -234,6 +216,8 @@ async def diagnose(failed: dict[str, Any], llm, attempt: int) -> dict[str, Any]:
             "tokens_in": response.prompt_tokens,
             "tokens_out": response.completion_tokens,
             "latency_ms": int(response.latency_ms),
+            "cache_read_tokens": response.cache_read_tokens,
+            "cache_write_tokens": response.cache_write_tokens,
             "prompt_preview": user[:800],
             "response_preview": response.text[:1200],
         }

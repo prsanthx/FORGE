@@ -15,6 +15,8 @@ class LLMResponse:
     provider: str
     model: str
     estimated_tokens: bool = False
+    cache_read_tokens: int = 0
+    cache_write_tokens: int = 0
 
 
 class LLMError(RuntimeError):

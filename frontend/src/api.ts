@@ -29,8 +29,15 @@ export const api = {
     request<import("./types").ForgeConfig>(`/api/configs/${name}`, { method: "PUT", body: JSON.stringify(body) }),
   runs: () => request<import("./types").Run[]>("/api/runs"),
   run: (id: string) => request<import("./types").Run>(`/api/runs/${id}`),
-  createRun: (body: { repo_id: string; config: string; goal: string; llm?: Record<string, string> }) =>
-    request<import("./types").Run>("/api/runs", { method: "POST", body: JSON.stringify(body) }),
+  createRun: (body: {
+    repo_id: string;
+    config: string;
+    goal: string;
+    llm?: Record<string, string>;
+    sandbox?: "repo" | "docker";
+    context_policy?: import("./types").ContextPolicy;
+  }) => request<import("./types").Run>("/api/runs", { method: "POST", body: JSON.stringify(body) }),
+  diff: (id: string) => request<import("./types").RunDiff>(`/api/runs/${id}/diff`),
   resume: (id: string, note: string) =>
     request<import("./types").Run>(`/api/runs/${id}/resume`, { method: "POST", body: JSON.stringify({ note }) }),
   providers: () => request<import("./types").ProviderInfo[]>("/api/providers"),
@@ -42,8 +49,13 @@ export const api = {
   benchTasks: () => request<import("./types").BenchTask[]>("/api/benchmarks/tasks"),
   benchmarks: () => request<import("./types").Benchmark[]>("/api/benchmarks"),
   benchmark: (id: string) => request<import("./types").Benchmark>(`/api/benchmarks/${id}`),
-  runBenchmark: (body: { repo_id: string; configs: string[]; task_ids: string[] }) =>
-    request<import("./types").Benchmark>("/api/benchmarks", { method: "POST", body: JSON.stringify(body) }),
+  runBenchmark: (body: {
+    repo_id: string;
+    configs: string[];
+    task_ids: string[];
+    sandbox?: "repo" | "docker";
+    context_policy?: import("./types").ContextPolicy;
+  }) => request<import("./types").Benchmark>("/api/benchmarks", { method: "POST", body: JSON.stringify(body) }),
   studio: (config = "full_forge") =>
     request<import("./types").StudioSnapshot>(`/api/studio?config=${encodeURIComponent(config)}`),
   createSkill: (body: { name: string; description?: string; body: string; enabled?: boolean }) =>

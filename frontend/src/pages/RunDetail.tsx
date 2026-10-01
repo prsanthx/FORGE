@@ -2,9 +2,9 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import Dag from "../components/Dag";
 import { elapsedSince, fmtMs, fmtRate, isLive, statusTone } from "../format";
-import type { Run, RunEvent } from "../types";
+import type { Run, RunDiff, RunEvent } from "../types";
 
-type Tab = "log" | "model" | "tools" | "failures";
+type Tab = "log" | "model" | "tools" | "failures" | "context" | "diff";
 
 export default function RunDetail({ id }: { id: string }) {
   const [run, setRun] = useState<Run | null>(null);
@@ -12,6 +12,7 @@ export default function RunDetail({ id }: { id: string }) {
   const [note, setNote] = useState("Please fix the failing check and keep existing tests passing.");
   const [error, setError] = useState("");
   const [tab, setTab] = useState<Tab>("log");
+  const [diff, setDiff] = useState<RunDiff | null>(null);
   const [, setTick] = useState(0);
 
   useEffect(() => {
@@ -37,6 +38,11 @@ export default function RunDetail({ id }: { id: string }) {
       source.close();
     };
   }, [id]);
+
+  useEffect(() => {
+    if (tab !== "diff" && tab !== "context") return;
+    api.diff(id).then(setDiff).catch(() => setDiff(null));
+  }, [id, tab, run?.status]);
 
   if (!run) {
     return (
@@ -83,6 +89,7 @@ export default function RunDetail({ id }: { id: string }) {
             <span>{run.id}</span>
             <span>{run.config_name}</span>
             {run.branch && <span>{run.branch}</span>}
+            {run.workspace && <span>{run.workspace}</span>}
           </p>
         </div>
         <span className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 text-[12px] ${statusTone(run.status)}`}>
@@ -169,7 +176,7 @@ export default function RunDetail({ id }: { id: string }) {
       <section className="grid gap-4 lg:grid-cols-[1.15fr_0.85fr]">
         <div className="panel p-4">
           <div className="mb-3 flex items-center gap-1">
-            {(["log", "model", "tools", "failures"] as Tab[]).map((item) => (
+            {(["log", "model", "tools", "failures", "context", "diff"] as Tab[]).map((item) => (
               <button
                 key={item}
                 className={`rounded-md px-2.5 py-1 text-[12px] capitalize transition ${tab === item ? "bg-elevated text-ink" : "text-mute hover:text-ink"}`}
@@ -248,6 +255,8 @@ export default function RunDetail({ id }: { id: string }) {
               {failures.length === 0 && <p className="text-sm text-mute">Nothing failed. Recovery stays idle until a check misses.</p>}
             </div>
           )}
+          {tab === "context" && <ContextPanel run={run} />}
+          {tab === "diff" && <DiffPanel diff={diff} />}
         </div>
         <div className="panel p-4">
           <div className="text-[13px] font-medium">Tokens by task</div>
@@ -285,9 +294,72 @@ function toolLabel(name: string): string {
     terminal: "Terminal",
     git: "Git",
     kg_query: "Graph",
+    read_spill: "Spill",
     finish: "Finish",
   };
   return labels[name] || name;
+}
+
+function ContextPanel({ run }: { run: Run }) {
+  const context = run.metrics?.context;
+  const policy = context?.policy;
+  if (!policy) {
+    return <p className="text-sm text-mute">This run did not record a context policy.</p>;
+  }
+  const techniques = [
+    ["spill", "Spill large output"],
+    ["dedupe_reads", "De-duplicate reads"],
+    ["mask_old", "Mask old output"],
+    ["agents_md", "AGENTS.md / CLAUDE.md"],
+    ["prompt_cache", "Prompt cache"],
+  ] as const;
+  const rate = context.hit_rate == null ? "no hits reported" : `${Math.round(context.hit_rate * 100)}%`;
+  return (
+    <div className="max-h-80 space-y-3 overflow-auto text-[13px]">
+      <div className="flex flex-wrap gap-2">
+        {techniques.map(([key, label]) => (
+          <span key={key} className={`chip ${policy[key] ? "chip-on" : "opacity-50"}`}>
+            {label}
+          </span>
+        ))}
+      </div>
+      <p className="leading-6 text-mute">
+        {context.checks} Sandbox: {context.sandbox || run.metrics?.sandbox || "repo"}.
+        {context.agents_files?.length ? ` Guide: ${context.agents_files.join(", ")}.` : " No AGENTS.md or CLAUDE.md in this repo."}
+      </p>
+      <div className="grid grid-cols-2 gap-2 font-mono text-[12px] text-faint sm:grid-cols-4">
+        <span>{context.spills ?? 0} spills</span>
+        <span>{context.dedupes ?? 0} deduped</span>
+        <span>{context.masked_observations ?? 0} masked</span>
+        <span>cache {rate}</span>
+      </div>
+      <p className="font-mono text-[11px] leading-5 text-faint">
+        cache read {context.cache_read_tokens ?? 0} · cache write {context.cache_write_tokens ?? 0} · prompt tokens {context.prompt_tokens ?? 0}
+      </p>
+    </div>
+  );
+}
+
+function DiffPanel({ diff }: { diff: RunDiff | null }) {
+  if (!diff) return <p className="text-sm text-mute">Loading the diff against the run base.</p>;
+  if (diff.error && !(diff.files || []).length) return <p className="text-sm text-bad">{diff.error}</p>;
+  return (
+    <div className="max-h-80 space-y-2 overflow-auto">
+      <p className="font-mono text-[11px] text-faint">
+        {diff.branch} · {diff.workspace}
+      </p>
+      {(diff.files || []).length === 0 && <p className="text-sm text-mute">No file changes against the run base.</p>}
+      <ul className="space-y-1">
+        {(diff.files || []).map((file) => (
+          <li key={file.path} className="font-mono text-[12px] text-ink">
+            <span className="mr-2 text-faint">{file.status}</span>
+            {file.path}
+          </li>
+        ))}
+      </ul>
+      {diff.patch && <pre className="codeblock max-h-52 whitespace-pre-wrap">{diff.patch}</pre>}
+    </div>
+  );
 }
 
 function pretty(value: string): string {

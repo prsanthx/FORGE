@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -24,11 +25,20 @@ def _service(tmp_path: Path) -> ForgeService:
     return ForgeService(Database(tmp_path / "forge.db"), workspace_root=tmp_path)
 
 
-def _run(service: ForgeService, config: str, goal: str) -> dict:
-    repo = service.connect_local(str(EXAMPLE_REPO), name="todo-api")
+def _connect(service: ForgeService, tmp_path: Path) -> tuple[dict, Path]:
+    dest = tmp_path / "todo-api"
+    shutil.copytree(EXAMPLE_REPO, dest, ignore=shutil.ignore_patterns("__pycache__", ".pytest_cache", ".venv"))
+    repo = service.connect_local(str(dest), name="todo-api")
     service.index(repo["id"])
-    created = service.create_run(repo_id=repo["id"], config_name=config, goal=goal)
-    return asyncio.run(service.execute(created["id"]))
+    return repo, dest
+
+
+def _run(service: ForgeService, tmp_path: Path, config: str, goal: str) -> dict:
+    repo, dest = _connect(service, tmp_path)
+    created = service.create_run(repo_id=repo["id"], config_name=config, goal=goal, sandbox="repo")
+    finished = asyncio.run(service.execute(created["id"]))
+    finished["_connected"] = str(dest.resolve())
+    return finished
 
 
 def _probe(workspace: Path) -> dict:
@@ -56,7 +66,7 @@ print(json.dumps({"done": done, "has_remove": hasattr(store, "remove")}))
 
 
 def test_baseline_forgets_remove_and_does_not_mark_done(tmp_path: Path):
-    finished = _run(_service(tmp_path), "baseline", SIMPLE)
+    finished = _run(_service(tmp_path), tmp_path, "baseline", SIMPLE)
     assert finished["status"] in {"completed", "completed_with_failures"}
     assert finished["metrics"]["verification_pass_rate"] is None
     probe = _probe(Path(finished["workspace"]))
@@ -67,7 +77,8 @@ def test_baseline_forgets_remove_and_does_not_mark_done(tmp_path: Path):
 
 
 def test_full_forge_simple_marks_done_and_keeps_remove(tmp_path: Path):
-    finished = _run(_service(tmp_path), "full_forge", SIMPLE)
+    service = _service(tmp_path)
+    finished = _run(service, tmp_path, "full_forge", SIMPLE)
     assert finished["error"] in (None, "")
     assert finished["status"] == "completed"
     probe = _probe(Path(finished["workspace"]))
@@ -78,3 +89,15 @@ def test_full_forge_simple_marks_done_and_keeps_remove(tmp_path: Path):
     assert finished["tasks"]
     assert finished["llm_calls"]
     assert finished["branch"].startswith("forge/run-")
+    assert Path(finished["workspace"]).resolve() == Path(finished["_connected"]).resolve()
+    assert (Path(finished["workspace"]) / ".git").is_dir()
+    store = (Path(finished["workspace"]) / "todo" / "store.py").read_text()
+    assert "def mark_done" in store
+    policy = finished["metrics"]["context"]["policy"]
+    assert policy["spill"] is True
+    assert policy["dedupe_reads"] is True
+    assert policy["prompt_cache"] is True
+    diff = service.diff(finished["id"])
+    assert any(str(item["path"]).endswith("store.py") for item in diff["files"])
+    assert "mark_done" in diff["patch"]
+    assert not (EXAMPLE_REPO / ".git").exists()

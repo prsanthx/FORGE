@@ -277,6 +277,8 @@ async def create_plan(
         "tokens_in": response.prompt_tokens,
         "tokens_out": response.completion_tokens,
         "latency_ms": int(response.latency_ms),
+        "cache_read_tokens": response.cache_read_tokens,
+        "cache_write_tokens": response.cache_write_tokens,
     }
     try:
         plan = normalize_plan(extract_json(response.text), file_hints)

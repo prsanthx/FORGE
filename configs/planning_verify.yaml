@@ -29,6 +29,12 @@ recovery:
 executor:
   max_steps_per_task: 8
   context_char_budget: 5000
+context:
+  spill: true
+  dedupe_reads: true
+  mask_old: true
+  agents_md: true
+  prompt_cache: true
 llm:
   provider: mock
   model: mock-small

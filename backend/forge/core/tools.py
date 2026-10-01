@@ -1,13 +1,14 @@
-"""Workspace tools. Paths cannot escape the run workspace."""
+"""Workspace tools. Paths cannot escape the project, and pip cannot install."""
 
 from __future__ import annotations
 
 import ast
-import shlex
 import subprocess
 import time
 from pathlib import Path
+from typing import Any
 
+from forge.core.sandbox import SandboxError, current_runner, split_command
 from forge.kg.query import GraphRetriever
 
 ALLOWED_BINARIES = {"python", "python3", "pytest", "git", "ls", "cat"}
@@ -91,11 +92,11 @@ def tool_read_file(root: Path, relative: str, start: int | None = None, end: int
     symbols = ", ".join(_symbols(text)) or "(none)"
     lines = text.splitlines()
     if start or end:
-        s = max(1, start or 1) - 1
-        e = end or len(lines)
+        s = max(1, int(start or 1)) - 1
+        e = int(end or len(lines))
         body = "\n".join(lines[s:e])
     else:
-        body = text if len(text) < 8000 else text[:8000]
+        body = text
     return f"path: {relative}\nsymbols: {symbols}\n---\n{body}"
 
 
@@ -109,33 +110,31 @@ def tool_write_file(root: Path, relative: str, content: str) -> str:
 
 
 def tool_terminal(root: Path, command: str) -> str:
+    if any(token in (command or "") for token in (";", "&&", "|", "`", "$(", ">", "<")):
+        raise ToolError("shell operators are not allowed")
     try:
-        argv = shlex.split(command or "")
-    except ValueError as exc:
-        raise ToolError(f"could not parse command: {exc}") from exc
+        argv = split_command(command)
+    except SandboxError as exc:
+        raise ToolError(str(exc)) from exc
     if not argv:
         raise ToolError("empty command")
-    if any(token in command for token in (";", "&&", "|", "`", "$(", ">", "<")):
-        raise ToolError("shell operators are not allowed")
     binary = Path(argv[0]).name
     if binary not in ALLOWED_BINARIES:
-        raise ToolError(f"command not allowed: {binary}")
-    proc = subprocess.run(
-        argv,
-        cwd=root,
-        text=True,
-        capture_output=True,
-        timeout=40,
-        check=False,
-        env=_tool_env(root),
-    )
+        raise ToolError(f"command not allowed: {binary}. Commands stay inside this project, and pip install is blocked.")
+    try:
+        proc = current_runner().run(argv, cwd=root, timeout=40)
+    except SandboxError as exc:
+        raise ToolError(str(exc)) from exc
     output = (proc.stdout or "") + (("\n" + proc.stderr) if proc.stderr else "")
-    return f"exit={proc.returncode}\n{output[:4000]}"
+    return f"exit={proc.returncode}\n{output}"
 
 
 def tool_git(root: Path, args: list[str] | str) -> str:
     if isinstance(args, str):
-        argv = shlex.split(args)
+        try:
+            argv = split_command(args)
+        except SandboxError as exc:
+            raise ToolError(str(exc)) from exc
     else:
         argv = list(args)
     if not argv or argv[0] not in GIT_ALLOWED:
@@ -166,21 +165,13 @@ def tool_kg_query(retriever: GraphRetriever | None, query: str) -> str:
     return "\n".join(rows)
 
 
-def _tool_env(root: Path) -> dict[str, str]:
-    import os
-
-    env = os.environ.copy()
-    env["PYTHONPATH"] = str(root)
-    env.pop("PYTEST_ADDOPTS", None)
-    return env
-
-
 def execute_tool(
     name: str,
     args: dict,
     *,
     root: Path,
     retriever: GraphRetriever | None = None,
+    session: Any | None = None,
 ) -> tuple[bool, str, int]:
     started = time.perf_counter()
     try:
@@ -203,11 +194,23 @@ def execute_tool(
             result = tool_git(root, args.get("args") or args.get("command") or "status")
         elif name == "kg_query":
             result = tool_kg_query(retriever, str(args.get("query") or ""))
+        elif name == "read_spill":
+            if session is None:
+                raise ToolError("read_spill is not active for this run")
+            result = session.read_spill(
+                str(args.get("id") or args.get("spill") or ""),
+                args.get("start"),
+                args.get("end"),
+            )
         else:
             raise ToolError(f"unknown tool {name}")
         ok = True
-    except (ToolError, OSError, subprocess.TimeoutExpired) as exc:
+    except (ToolError, SandboxError, OSError, subprocess.TimeoutExpired) as exc:
         result = f"tool error: {exc}"
         ok = False
+    if session is not None and ok:
+        result = session.shape(name, args, result, root=root)
+    elif session is not None and name in {"write_file", "terminal"}:
+        session.reads.clear()
     elapsed = int((time.perf_counter() - started) * 1000)
-    return ok, result[:5000], elapsed
+    return ok, result, elapsed

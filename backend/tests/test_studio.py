@@ -24,12 +24,12 @@ def test_seed_skills_and_tool_count(tmp_path):
     assert view["summary"]["builtin_enabled"] == 7
     assert view["summary"]["finish"] == 1
     assert view["summary"]["mcp_tools"] == 0
-    assert view["summary"]["tools_in_prompt"] == 8
+    assert view["summary"]["tools_in_prompt"] == 9
     assert "finish" in view["prompt_tools"]
     again = snapshot(db, "baseline")
     assert len(again["skills"]) == 3
     assert again["summary"]["builtin_enabled"] == 2
-    assert again["summary"]["tools_in_prompt"] == 3
+    assert again["summary"]["tools_in_prompt"] == 4
 
 
 def test_skill_toggle_changes_prompt_block(tmp_path):
@@ -53,7 +53,7 @@ def test_demo_mcp_is_offered_to_the_model(tmp_path):
     assert "local_demo_ask_oracle" in prompt_names
     view = snapshot(db, "full_forge")
     assert view["summary"]["mcp_tools"] == 2
-    assert view["summary"]["tools_in_prompt"] == 10
+    assert view["summary"]["tools_in_prompt"] == 11
     block, names = load_prompt_extras(db)
     prompt = build_prompt(
         goal="Add a note",

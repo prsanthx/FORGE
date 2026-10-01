@@ -12,10 +12,19 @@ export type Repo = {
 
 export type FeatureFlags = Record<string, boolean>;
 
+export type ContextPolicy = {
+  spill?: boolean;
+  dedupe_reads?: boolean;
+  mask_old?: boolean;
+  agents_md?: boolean;
+  prompt_cache?: boolean;
+};
+
 export type ForgeConfig = {
   name: string;
   description?: string;
   features: FeatureFlags;
+  context?: ContextPolicy & { spill_chars?: number; spill_file_chars?: number; mask_chars?: number };
   verification?: { levels?: string[]; fail_fast?: boolean };
   recovery?: { max_retries?: number; risk_threshold?: number; strategies?: string[] };
   executor?: { max_steps_per_task?: number; context_char_budget?: number };
@@ -76,6 +85,31 @@ export type Metrics = {
   tasks_total?: number;
   tasks_done?: number;
   tasks_failed?: number;
+  sandbox?: string;
+  context?: {
+    policy?: ContextPolicy;
+    thresholds?: { spill_chars?: number; spill_file_chars?: number; mask_chars?: number };
+    sandbox?: string;
+    agents_files?: string[];
+    spills?: number;
+    dedupes?: number;
+    masked_observations?: number;
+    cache_read_tokens?: number;
+    cache_write_tokens?: number;
+    prompt_tokens?: number;
+    hit_rate?: number | null;
+    checks?: string;
+  };
+};
+
+export type RunDiff = {
+  branch?: string;
+  workspace?: string;
+  sandbox?: string;
+  stat?: string;
+  patch?: string;
+  error?: string;
+  files?: { status: string; path: string }[];
 };
 
 export type Run = {

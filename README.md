@@ -111,7 +111,7 @@ python -m forge.cli run \
   --goal "Please add a way to mark a todo as done. When a todo is marked done, its done flag becomes true. Keep existing behavior. Add a unit test."
 ```
 
-The run copies the repo into a workspace, so the example stays clean. The feature branch lives in that workspace.
+A run works in the folder you connected. If that folder is not a git repository, FORGE initializes one, then commits the result on `forge/run-<id>`. Docker sandbox is the other choice: the connected folder stays untouched and the run happens in a container. Checks use the project on `PYTHONPATH`. `pip install` is blocked.
 
 ## Ollama
 

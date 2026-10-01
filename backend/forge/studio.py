@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 import httpx
 
 from forge.db import Database
+from forge.core.context import resolve_policy
 from forge.settings import BACKEND_DIR, load_config
 from forge.util import new_id, utc_now
 
@@ -27,6 +28,12 @@ BUILTIN: list[dict[str, Any]] = [
     {"name": "terminal", "group": "Workspace", "summary": "Run an allowlisted command such as pytest."},
     {"name": "git", "group": "Workspace", "summary": "Inspect status, diff, or recent commits."},
     {"name": "kg_query", "group": "Graph", "summary": "Ask the knowledge graph for a symbol or task."},
+    {
+        "name": "read_spill",
+        "group": "Context",
+        "summary": "Page a spilled tool result by id. Offered when spill is on.",
+        "spill": True,
+    },
     {
         "name": "finish",
         "group": "Control",
@@ -115,13 +122,16 @@ def snapshot(db: Database, config_name: str = "full_forge") -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise NotFound(str(exc)) from exc
     enabled = set((cfg.get("tools") or {}).get("enabled") or [])
+    spill_on = bool(resolve_policy(cfg).get("spill"))
     builtin = []
     for item in BUILTIN:
+        if item.get("spill") and not spill_on:
+            continue
         builtin.append(
             {
                 **item,
-                "always": bool(item.get("always")),
-                "enabled": True if item.get("always") else item["name"] in enabled,
+                "always": bool(item.get("always") or item.get("spill")),
+                "enabled": True if item.get("always") or item.get("spill") else item["name"] in enabled,
             }
         )
     skills = db.list_skills()
@@ -133,7 +143,7 @@ def snapshot(db: Database, config_name: str = "full_forge") -> dict[str, Any]:
         "finish": 1,
         "mcp_tools": len(mcp_tools),
         "skills_enabled": sum(1 for skill in skills if skill["enabled"]),
-        "tools_in_prompt": builtin_on + 1 + len(mcp_tools),
+        "tools_in_prompt": builtin_on + 1 + (1 if spill_on else 0) + len(mcp_tools),
     }
     return {
         "config": cfg.get("name") or config_name,

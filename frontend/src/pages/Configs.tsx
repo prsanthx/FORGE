@@ -2,6 +2,14 @@ import { useEffect, useState } from "react";
 import { api } from "../api";
 import type { ForgeConfig } from "../types";
 
+const CONTEXT = [
+  ["spill", "Spill large output"],
+  ["dedupe_reads", "De-duplicate reads"],
+  ["mask_old", "Mask old output"],
+  ["agents_md", "AGENTS.md"],
+  ["prompt_cache", "Prompt cache"],
+] as const;
+
 const FLAGS = [
   ["planning", "Planning"],
   ["hierarchical_planning", "Hierarchical planning"],
@@ -28,6 +36,13 @@ export default function Configs() {
       features: { ...config.features, [key]: !config.features?.[key] },
     };
     const saved = await api.saveConfig(config.name, next);
+    setConfigs((current) => current.map((item) => (item.name === saved.name ? saved : item)));
+    setMessage(`Saved ${saved.name}`);
+  }
+
+  async function toggleContext(config: ForgeConfig, key: (typeof CONTEXT)[number][0]) {
+    const context = { ...(config.context || {}), [key]: !config.context?.[key] };
+    const saved = await api.saveConfig(config.name, { ...config, context });
     setConfigs((current) => current.map((item) => (item.name === saved.name ? saved : item)));
     setMessage(`Saved ${saved.name}`);
   }
@@ -78,6 +93,16 @@ export default function Configs() {
                   return (
                     <button key={key} className={`chip ${on ? "chip-on" : ""}`} onClick={() => toggle(config, key)}>
                       <span className={`mr-1.5 inline-block h-1.5 w-1.5 rounded-full ${on ? "bg-accent" : "bg-line"}`} />
+                      {label}
+                    </button>
+                  );
+                })}
+              </div>
+              <div className="mt-3 flex flex-wrap gap-2">
+                {CONTEXT.map(([key, label]) => {
+                  const on = config.context?.[key] !== false;
+                  return (
+                    <button key={key} className={`chip ${on ? "chip-on" : ""}`} onClick={() => toggleContext(config, key)}>
                       {label}
                     </button>
                   );

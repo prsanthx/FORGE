@@ -22,7 +22,7 @@ def _pytest_counts(workspace: Path, targets: list[str]) -> dict[str, int]:
     env["PYTHONPATH"] = str(workspace)
     env.pop("PYTEST_ADDOPTS", None)
     proc = subprocess.run(
-        [sys.executable, "-m", "pytest", "-q", "--tb=no", "--noconftest", *targets],
+        [sys.executable, "-m", "pytest", "-q", "--tb=no", "--noconftest", f"--rootdir={workspace}", f"--confcutdir={workspace}", *targets],
         cwd=str(workspace),
         text=True,
         capture_output=True,
@@ -82,6 +82,8 @@ async def run_benchmark(
     config_names: list[str],
     task_ids: list[str] | None = None,
     llm_override: dict[str, Any] | None = None,
+    sandbox: str = "repo",
+    context_policy: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     repo = service.db.get_repo_raw(repo_id)
     if not repo:
@@ -102,6 +104,9 @@ async def run_benchmark(
         }
     )
     source = Path(repo["path"])
+    from forge.core.checkpoints import user_base
+
+    base = None if sandbox == "docker" else user_base(source)
     cells = []
     for spec in specs:
         pre = _pytest_counts(source, ["tests/test_store.py"])
@@ -112,6 +117,9 @@ async def run_benchmark(
                 goal=spec["prompt"],
                 llm_override=llm_override,
                 interactive=False,
+                sandbox=sandbox,
+                context_policy=context_policy,
+                base_rev=base,
             )
             finished = await service.execute(created["id"])
             workspace = Path(finished["workspace"]) if finished.get("workspace") else source

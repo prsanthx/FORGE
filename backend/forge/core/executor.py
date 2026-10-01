@@ -7,6 +7,7 @@ import time
 from pathlib import Path
 from typing import Any, Callable
 
+from forge.core.context import ContextSession
 from forge.core.tools import execute_tool
 from forge.kg.query import GraphRetriever
 from forge.util import extract_json
@@ -50,6 +51,7 @@ def build_prompt(
     planning: bool,
     skill_block: str = "",
     extra_tools: list[str] | None = None,
+    session: ContextSession | None = None,
 ) -> str:
     sections = [
         f"GOAL:\n{goal.strip()}",
@@ -88,16 +90,20 @@ def build_prompt(
     sections.append(f"TOOLS:\n{tool_lines}")
     if skill_block.strip():
         sections.append(skill_block if skill_block.startswith("SKILLS:") else f"SKILLS:\n{skill_block}")
-    public_steps = []
-    for step in steps[-8:]:
-        public_steps.append(
-            {
-                "action": step["action"],
-                "args": {key: value for key, value in step.get("args", {}).items() if key != "content"},
-                "ok": step.get("ok"),
-                "result": (step.get("result") or "")[:3500],
-            }
-        )
+    if session is not None:
+        public_steps = session.present_steps(steps)
+    else:
+        public_steps = []
+        for step in steps[-8:]:
+            public_steps.append(
+                {
+                    "action": step["action"],
+                    "args": {key: value for key, value in step.get("args", {}).items() if key != "content"},
+                    "ok": step.get("ok"),
+                    "thought": step.get("thought") or "",
+                    "result": (step.get("result") or "")[:3500],
+                }
+            )
     sections.append("PRIOR_STEPS_JSON:\n" + json.dumps(public_steps))
     return "\n\n".join(sections)
 
@@ -135,10 +141,13 @@ async def execute_task(
     skill_block: str = "",
     extra_tools: list[str] | None = None,
     mcp_call: Callable[[str, dict[str, Any]], tuple[bool, str]] | None = None,
+    session: ContextSession | None = None,
 ) -> dict[str, Any]:
     tools = _enabled(cfg)
     mcp_names = [name for name in (extra_tools or []) if name not in tools]
     visible = tools + mcp_names
+    if session is not None and session.policy.get("spill") and "read_spill" not in visible:
+        visible.append("read_spill")
     planning = bool((cfg.get("features") or {}).get("planning"))
     use_pack = bool((cfg.get("features") or {}).get("context_packs")) and retriever is not None
     budget = int((cfg.get("executor") or {}).get("context_char_budget") or 4000)
@@ -163,10 +172,12 @@ async def execute_task(
             failure_memory=failure_memory if (cfg.get("features") or {}).get("failure_memory") else [],
             planning=planning,
             skill_block=skill_block,
+            session=session,
         )
+        system = session.system_prompt if session is not None and session.system_prompt else EXECUTE_SYSTEM
         response = await llm.complete(
             [
-                {"role": "system", "content": EXECUTE_SYSTEM},
+                {"role": "system", "content": system},
                 {"role": "user", "content": prompt},
             ],
             temperature=float((cfg.get("llm") or {}).get("temperature") or 0.2),
@@ -196,13 +207,19 @@ async def execute_task(
             await on_tool(action, args, ok, result, elapsed)
             steps.append({"action": action, "args": args, "ok": ok, "result": result, "thought": thought})
             continue
-        if action not in tools:
+        if action == "read_spill":
+            if session is None or not session.policy.get("spill"):
+                result = "read_spill is off for this run"
+                steps.append({"action": action, "args": args, "ok": False, "result": result, "thought": thought})
+                await on_tool(action, args, False, result, 0)
+                continue
+        elif action not in tools:
             result = f"tool {action} is disabled in this config"
             steps.append({"action": action, "args": args, "ok": False, "result": result, "thought": thought})
             await on_tool(action, args, False, result, 0)
             continue
         # Avoid logging full file bodies twice; the tool call record keeps a preview.
-        ok, result, elapsed = execute_tool(action, args, root=workspace, retriever=retriever)
+        ok, result, elapsed = execute_tool(action, args, root=workspace, retriever=retriever, session=session)
         await on_tool(action, args, ok, result, elapsed)
         if action == "write_file" and ok:
             changed.append(str(args.get("path")))

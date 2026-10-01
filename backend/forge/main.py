@@ -41,6 +41,8 @@ class RunCreate(BaseModel):
     config: str
     goal: str
     llm: dict[str, Any] | None = None
+    sandbox: str = "repo"
+    context_policy: dict[str, Any] | None = None
 
 
 class ResumeBody(BaseModel):
@@ -59,6 +61,8 @@ class BenchmarkBody(BaseModel):
     configs: list[str] = Field(default_factory=lambda: ["baseline", "planning", "planning_verify", "full_forge"])
     task_ids: list[str] | None = None
     llm: dict[str, Any] | None = None
+    sandbox: str = "repo"
+    context_policy: dict[str, Any] | None = None
 
 
 class SkillBody(BaseModel):
@@ -196,10 +200,12 @@ async def runs_create(body: RunCreate) -> dict[str, Any]:
             config_name=body.config,
             goal=body.goal,
             llm_override=body.llm,
+            sandbox=body.sandbox,
+            context_policy=body.context_policy,
         )
     except KeyError as exc:
         raise HTTPException(404, "repo not found") from exc
-    except FileNotFoundError as exc:
+    except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(400, str(exc)) from exc
     asyncio.create_task(service.execute(run["id"]))
     return run
@@ -219,6 +225,14 @@ def run_resume(run_id: str, body: ResumeBody) -> dict[str, Any]:
         return service.resume(run_id, body.note)
     except RuntimeError as exc:
         raise HTTPException(409, str(exc)) from exc
+
+
+@app.get("/api/runs/{run_id}/diff")
+def run_diff(run_id: str) -> dict[str, Any]:
+    try:
+        return service.diff(run_id)
+    except KeyError as exc:
+        raise HTTPException(404, "run not found") from exc
 
 
 @app.get("/api/runs/{run_id}/events")
@@ -321,6 +335,8 @@ async def benchmarks_create(body: BenchmarkBody) -> dict[str, Any]:
             config_names=body.configs,
             task_ids=body.task_ids,
             llm_override=body.llm,
+            sandbox=body.sandbox,
+            context_policy=body.context_policy,
         )
     except FileNotFoundError as exc:
         raise HTTPException(400, str(exc)) from exc
